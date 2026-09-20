@@ -83,6 +83,10 @@ export default function ScheduleTaskbar({ isOpen, onClose, tasks, onTaskDragStar
               marginBottom: '0.5rem',
               cursor: 'grab',
               transition: 'background 0.2s',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              WebkitTouchCallout: 'none',
+              touchAction: 'none'
             }}
             onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'}
             onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}

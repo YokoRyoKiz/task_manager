@@ -21,6 +21,8 @@ export default function TaskCard({ task, isInteracting, isHeld, onPointerDown, o
         zIndex: isHeld || isInteracting ? 50 : 10,
         touchAction: 'none',
         userSelect: 'none',
+        WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',
         transform: isHeld ? 'scale(1.05)' : 'scale(1)',
         transition: 'transform 0.2s, box-shadow 0.2s',
         opacity: isHeld ? 0.95 : 1

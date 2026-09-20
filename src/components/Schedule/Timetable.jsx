@@ -29,31 +29,58 @@ export default function Timetable({ date, items, setItems, onExternalDropRef, is
     return hour;
   };
 
+  const longPressTimerRef = useRef(null);
+
   const handlePointerDown = (e) => {
     // Only start drag if clicking on the empty background, not on an item
     if (e.target.closest('.schedule-item')) return;
     
-    setIsDragging(true);
-    const startHour = getHourFromY(e.clientY);
-    
-    // Snap to 15 min intervals (0.25)
-    const snappedStart = Math.floor(startHour * 4) / 4;
-    
-    setDragStartInfo({ startHour: snappedStart });
-    setTempItem({
-      id: 'temp',
-      title: '新しい予定',
-      startHour: snappedStart,
-      endHour: snappedStart + 0.5, // Default 30 mins
-      color: 'blue'
-    });
-    
-    try {
-      e.target.setPointerCapture(e.pointerId);
-    } catch (err) {}
+    if (isMobile) {
+      const clientY = e.clientY;
+      const pointerId = e.pointerId;
+      const target = e.target;
+      
+      longPressTimerRef.current = setTimeout(() => {
+        setIsDragging(true);
+        const startHour = getHourFromY(clientY);
+        const snappedStart = Math.floor(startHour * 4) / 4;
+        
+        setDragStartInfo({ startHour: snappedStart });
+        setTempItem({
+          id: 'temp',
+          title: '新しい予定',
+          startHour: snappedStart,
+          endHour: snappedStart + 0.5,
+          color: 'blue'
+        });
+        
+        if (navigator.vibrate) navigator.vibrate(50);
+        try { target.setPointerCapture(pointerId); } catch(err){}
+      }, 250); // 250ms long press to start creating
+    } else {
+      setIsDragging(true);
+      const startHour = getHourFromY(e.clientY);
+      const snappedStart = Math.floor(startHour * 4) / 4;
+      
+      setDragStartInfo({ startHour: snappedStart });
+      setTempItem({
+        id: 'temp',
+        title: '新しい予定',
+        startHour: snappedStart,
+        endHour: snappedStart + 0.5,
+        color: 'blue'
+      });
+      
+      try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+    }
   };
 
   const handlePointerMove = (e) => {
+    if (longPressTimerRef.current && !isDragging) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
     if (isDragging && tempItem) {
       const currentHour = getHourFromY(e.clientY);
       const snappedCurrent = Math.ceil(currentHour * 4) / 4;
@@ -85,6 +112,11 @@ export default function Timetable({ date, items, setItems, onExternalDropRef, is
   };
 
   const handlePointerUp = (e) => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
     if (isDragging) {
       setIsDragging(false);
       try {
@@ -206,13 +238,10 @@ export default function Timetable({ date, items, setItems, onExternalDropRef, is
       const touch1 = e.touches[0];
       const touch2 = e.touches[1];
       const distance = Math.abs(touch1.clientY - touch2.clientY);
-      const centerY = (touch1.clientY + touch2.clientY) / 2;
       
       initialTouchRef.current = {
         distance,
-        centerY,
-        initialScale: scale,
-        initialScrollTop: scrollContainerRef.current ? scrollContainerRef.current.scrollTop : 0
+        initialScale: scale
       };
     }
   };
@@ -223,19 +252,13 @@ export default function Timetable({ date, items, setItems, onExternalDropRef, is
       const touch1 = e.touches[0];
       const touch2 = e.touches[1];
       const currentDistance = Math.abs(touch1.clientY - touch2.clientY);
-      const currentCenterY = (touch1.clientY + touch2.clientY) / 2;
 
-      const { distance, centerY, initialScale, initialScrollTop } = initialTouchRef.current;
+      const { distance, initialScale } = initialTouchRef.current;
       
-      if (distance > 10) { // small threshold to avoid jitter
+      if (distance > 10) { 
         const ratio = currentDistance / distance;
         const newScale = Math.min(Math.max(0.5, initialScale * ratio), 3);
         setScale(newScale);
-      }
-
-      const deltaY = currentCenterY - centerY;
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = initialScrollTop - deltaY;
       }
     }
   };
@@ -337,7 +360,7 @@ export default function Timetable({ date, items, setItems, onExternalDropRef, is
         flex: 1, 
         overflowY: 'auto', 
         position: 'relative',
-        touchAction: isMobile ? 'none' : 'auto' 
+        touchAction: isMobile ? 'pan-y' : 'auto' 
       }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}

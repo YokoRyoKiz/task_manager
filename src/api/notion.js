@@ -40,7 +40,14 @@ export async function fetchTaskTree() {
   for (const page of data.results) {
     const props = page.properties;
     const type = props.type.select?.name;
-    const title = props.title.rich_text[0]?.plain_text || '名称未設定';
+    
+    let title = '名称未設定';
+    for (const key in props) {
+      if (props[key].type === 'title') {
+        title = props[key].title[0]?.plain_text || '名称未設定';
+        break;
+      }
+    }
 
     if (type === 'task') {
       const progress = props.progress?.number || 0;
@@ -84,7 +91,7 @@ export async function createTask(task) {
     body: JSON.stringify({
       parent: { database_id: TASK_DB_ID },
       properties: {
-        "title": { rich_text: [{ text: { content: task.title } }] },
+        "title": { title: [{ text: { content: task.title || '名称未設定' } }] },
         type: { select: { name: 'task' } },
         progress: { number: task.progress || 0 },
         x_position: { number: task.x },
@@ -99,7 +106,7 @@ export async function createTask(task) {
 
 export async function updateTask(taskId, updates) {
   const properties = {};
-  if (updates.title !== undefined) properties["title"] = { rich_text: [{ text: { content: updates.title } }] };
+  if (updates.title !== undefined) properties["title"] = { title: [{ text: { content: updates.title || '名称未設定' } }] };
   if (updates.progress !== undefined) properties.progress = { number: updates.progress };
   if (updates.x !== undefined) properties.x_position = { number: updates.x };
   if (updates.y !== undefined) properties.y_position = { number: updates.y };
@@ -118,7 +125,7 @@ export async function createArea(area) {
     body: JSON.stringify({
       parent: { database_id: TASK_DB_ID },
       properties: {
-        "title": { rich_text: [{ text: { content: area.name } }] },
+        "title": { title: [{ text: { content: area.name || '名称未設定' } }] },
         type: { select: { name: 'area' } },
         x_position: { number: area.x },
         y_position: { number: area.y },
@@ -133,7 +140,7 @@ export async function createArea(area) {
 
 export async function updateArea(areaId, updates) {
   const properties = {};
-  if (updates.name !== undefined) properties["title"] = { rich_text: [{ text: { content: updates.name } }] };
+  if (updates.name !== undefined) properties["title"] = { title: [{ text: { content: updates.name || '名称未設定' } }] };
   if (updates.x !== undefined) properties.x_position = { number: updates.x };
   if (updates.y !== undefined) properties.y_position = { number: updates.y };
   if (updates.end_x !== undefined) properties.end_x_position = { number: updates.end_x };
@@ -183,9 +190,17 @@ export async function fetchSchedules() {
       }
     }
 
+    let title = '名称未設定';
+    for (const key in props) {
+      if (props[key].type === 'title') {
+        title = props[key].title[0]?.plain_text || '名称未設定';
+        break;
+      }
+    }
+
     schedules.push({
       id: page.id,
-      title: props.title.rich_text[0]?.plain_text || '名称未設定',
+      title: title,
       date: dateStr || new Date().toISOString().split('T')[0],
       startHour: props.start_time?.number || 0,
       endHour: props.end_time?.number || 1,
@@ -201,7 +216,7 @@ export async function createSchedule(item) {
     body: JSON.stringify({
       parent: { database_id: SCHEDULE_DB_ID },
       properties: {
-        "title": { rich_text: [{ text: { content: item.title } }] },
+        "title": { title: [{ text: { content: item.title || '名称未設定' } }] },
         target_date: { date: { start: item.date.split('T')[0] } },
         start_time: { number: item.startHour },
         end_time: { number: item.endHour }
@@ -213,7 +228,7 @@ export async function createSchedule(item) {
 
 export async function updateSchedule(scheduleId, updates) {
   const properties = {};
-  if (updates.title !== undefined) properties["title"] = { rich_text: [{ text: { content: updates.title } }] };
+  if (updates.title !== undefined) properties["title"] = { title: [{ text: { content: updates.title || '名称未設定' } }] };
   if (updates.date !== undefined) properties.target_date = { date: { start: updates.date.split('T')[0] } };
   if (updates.startHour !== undefined) properties.start_time = { number: updates.startHour };
   if (updates.endHour !== undefined) properties.end_time = { number: updates.endHour };

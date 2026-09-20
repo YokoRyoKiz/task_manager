@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function TimelineSlider({ selectedDate, setSelectedDate, tasks = [], isSidebarOpen = false }) {
+export default function TimelineSlider({ selectedDate, setSelectedDate, tasks = [], isSidebarOpen = false, isMobile = false }) {
   // Generate dates: yesterday to 8 days later (10 days total)
   const dates = Array.from({ length: 10 }).map((_, i) => {
     const d = new Date();
@@ -22,17 +22,30 @@ export default function TimelineSlider({ selectedDate, setSelectedDate, tasks = 
     <div 
       className="glass-panel" 
       style={{ 
-        padding: '1.5rem 0.5rem', 
-        overflowY: 'auto', 
-        width: isSidebarOpen ? '80px' : '220px', 
+        padding: isMobile ? '0.5rem' : '1.5rem 0.5rem', 
+        overflowY: isMobile ? 'hidden' : 'auto', 
+        overflowX: isMobile ? 'auto' : 'hidden',
+        width: isMobile ? '100%' : (isSidebarOpen ? '80px' : '220px'), 
         flexShrink: 0, 
-        height: '100%',
+        height: isMobile ? 'auto' : '100%',
         transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', minHeight: '600px' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', alignItems: 'center', position: 'relative', minHeight: isMobile ? 'auto' : '600px', minWidth: isMobile ? 'max-content' : 'auto' }}>
         {/* The line */}
-        <div style={{ position: 'absolute', top: '20px', bottom: '20px', left: isSidebarOpen ? '50%' : '60px', width: '2px', backgroundColor: 'var(--bg-tertiary)', transform: 'translateX(-50%)', zIndex: 0, transition: 'left 0.3s' }}></div>
+        <div style={{ 
+          position: 'absolute', 
+          top: isMobile ? '50%' : '20px', 
+          bottom: isMobile ? 'auto' : '20px', 
+          left: isMobile ? '20px' : (isSidebarOpen ? '50%' : '60px'), 
+          right: isMobile ? '20px' : 'auto',
+          width: isMobile ? 'auto' : '2px', 
+          height: isMobile ? '2px' : 'auto',
+          backgroundColor: 'var(--bg-tertiary)', 
+          transform: isMobile ? 'translateY(-50%)' : 'translateX(-50%)', 
+          zIndex: 0, 
+          transition: 'all 0.3s' 
+        }}></div>
         
         {dates.map((date, i) => {
           const isSelected = selectedDate.getDate() === date.getDate() && selectedDate.getMonth() === date.getMonth();
@@ -43,9 +56,9 @@ export default function TimelineSlider({ selectedDate, setSelectedDate, tasks = 
           const dayTasks = tasks.filter(t => t.deadline === dateStr);
           
           return (
-            <div key={i} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', width: '100%', zIndex: 1, margin: '1rem 0', position: 'relative' }}>
+            <div key={i} style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', width: isMobile ? '80px' : '100%', flexShrink: 0, zIndex: 1, margin: isMobile ? '0 0.5rem' : '1rem 0', position: 'relative' }}>
               <div style={{ 
-                width: isSidebarOpen ? '100%' : '120px', 
+                width: isMobile ? '100%' : (isSidebarOpen ? '100%' : '120px'), 
                 display: 'flex', 
                 justifyContent: 'center',
                 alignItems: 'center',
@@ -77,7 +90,7 @@ export default function TimelineSlider({ selectedDate, setSelectedDate, tasks = 
               </div>
 
               {/* Deadline Tasks */}
-              {!isSidebarOpen && (
+              {!isSidebarOpen && !isMobile && (
                 <div style={{ flex: 1, paddingLeft: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', overflow: 'hidden' }}>
                   {dayTasks.map(t => (
                     <div 

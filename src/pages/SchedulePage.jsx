@@ -12,6 +12,7 @@ export default function SchedulePage() {
   const [items, setItems] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
   // Global Drag State
   const [draggedTask, setDraggedTask] = useState(null);
@@ -28,6 +29,10 @@ export default function SchedulePage() {
         console.error('Failed to fetch data from Notion:', err);
         setLoading(false);
       });
+
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const handleTaskDragStart = (task, e) => {
@@ -75,19 +80,31 @@ export default function SchedulePage() {
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      <div className={`schedule-timeline ${isSidebarOpen ? 'mobile-hidden' : ''}`} style={{ display: 'flex', height: '100%' }}>
-        <TimelineSlider selectedDate={selectedDate} setSelectedDate={setSelectedDate} tasks={tasks} isSidebarOpen={isSidebarOpen} />
+      <div className={`schedule-timeline ${isSidebarOpen ? 'mobile-hidden' : ''}`} style={{ display: 'flex', height: isMobile ? 'auto' : '100%' }}>
+        <TimelineSlider selectedDate={selectedDate} setSelectedDate={setSelectedDate} tasks={tasks} isSidebarOpen={isSidebarOpen} isMobile={isMobile} />
       </div>
+      
+      {/* Mobile horizontal taskbar inside the flex column */}
+      {isMobile && (
+        <ScheduleTaskbar 
+          isOpen={true} 
+          onClose={() => {}} 
+          tasks={tasks} 
+          onTaskDragStart={handleTaskDragStart}
+          isMobile={true}
+        />
+      )}
+
       {loading ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div className="animate-pulse">Loading from Notion...</div>
         </div>
       ) : (
-        <Timetable date={selectedDate} items={items} setItems={setItems} onExternalDropRef={onExternalDropRef} />
+        <Timetable date={selectedDate} items={items} setItems={setItems} onExternalDropRef={onExternalDropRef} isMobile={isMobile} />
       )}
 
-      {/* Sidebar Toggle Button */}
-      {!isSidebarOpen && (
+      {/* Sidebar Toggle Button - Desktop only */}
+      {!isMobile && !isSidebarOpen && (
         <div className="schedule-toggle-btn" style={{ position: 'absolute', top: '1rem', right: '1rem', zIndex: 50 }}>
           <button 
             className="btn-icon glass-panel" 
@@ -100,12 +117,15 @@ export default function SchedulePage() {
         </div>
       )}
 
-      <ScheduleTaskbar 
-        isOpen={isSidebarOpen} 
-        onClose={() => setIsSidebarOpen(false)} 
-        tasks={tasks} 
-        onTaskDragStart={handleTaskDragStart}
-      />
+      {!isMobile && (
+        <ScheduleTaskbar 
+          isOpen={isSidebarOpen} 
+          onClose={() => setIsSidebarOpen(false)} 
+          tasks={tasks} 
+          onTaskDragStart={handleTaskDragStart}
+          isMobile={false}
+        />
+      )}
 
       {/* Ghost Element for Dragging */}
       {draggedTask && (

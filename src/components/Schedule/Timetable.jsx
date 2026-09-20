@@ -4,7 +4,9 @@ import { Trash2 } from 'lucide-react';
 import AddScheduleModal from './AddScheduleModal';
 import { createSchedule, deletePage, updateSchedule } from '../../api/notion';
 
-export default function Timetable({ date, items, setItems, onExternalDropRef }) {
+export default function Timetable({ date, items, setItems, onExternalDropRef, isMobile = false }) {
+  const [scale, setScale] = useState(1);
+  const hourHeight = 60 * scale;
   const hours = Array.from({ length: 24 }).map((_, i) => i);
   const containerRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -23,8 +25,7 @@ export default function Timetable({ date, items, setItems, onExternalDropRef }) 
     if (!containerRef.current) return 0;
     const rect = containerRef.current.getBoundingClientRect();
     const y = clientY - rect.top;
-    // Assuming each hour block is 60px height
-    const hour = Math.max(0, Math.min(24, y / 60));
+    const hour = Math.max(0, Math.min(24, y / hourHeight));
     return hour;
   };
 
@@ -70,7 +71,7 @@ export default function Timetable({ date, items, setItems, onExternalDropRef }) 
       });
     } else if (interactingItem) {
       const deltaY = e.clientY - interactingItem.startY;
-      const deltaHour = Math.round(deltaY / 60 * 4) / 4;
+      const deltaHour = Math.round(deltaY / hourHeight * 4) / 4;
       
       if (interactingItem.type === 'move') {
         const newStart = Math.max(0, interactingItem.origStartHour + deltaHour);
@@ -196,9 +197,59 @@ export default function Timetable({ date, items, setItems, onExternalDropRef }) 
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
   };
 
+  const initialTouchRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+
+  const handleTouchStart = (e) => {
+    if (!isMobile) return;
+    if (e.touches.length === 2) {
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const distance = Math.abs(touch1.clientY - touch2.clientY);
+      const centerY = (touch1.clientY + touch2.clientY) / 2;
+      
+      initialTouchRef.current = {
+        distance,
+        centerY,
+        initialScale: scale,
+        initialScrollTop: scrollContainerRef.current ? scrollContainerRef.current.scrollTop : 0
+      };
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isMobile) return;
+    if (e.touches.length === 2 && initialTouchRef.current) {
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const currentDistance = Math.abs(touch1.clientY - touch2.clientY);
+      const currentCenterY = (touch1.clientY + touch2.clientY) / 2;
+
+      const { distance, centerY, initialScale, initialScrollTop } = initialTouchRef.current;
+      
+      if (distance > 10) { // small threshold to avoid jitter
+        const ratio = currentDistance / distance;
+        const newScale = Math.min(Math.max(0.5, initialScale * ratio), 3);
+        setScale(newScale);
+      }
+
+      const deltaY = currentCenterY - centerY;
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = initialScrollTop - deltaY;
+      }
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (!isMobile) return;
+    if (e.touches.length < 2) {
+      initialTouchRef.current = null;
+    }
+  };
+
   const renderItem = (item, isTemp = false) => {
-    const top = item.startHour * 60;
-    const height = (item.endHour - item.startHour) * 60;
+    const top = item.startHour * hourHeight;
+    const height = (item.endHour - item.startHour) * hourHeight;
     
     return (
       <div
@@ -279,16 +330,28 @@ export default function Timetable({ date, items, setItems, onExternalDropRef }) 
   };
 
   return (
-    <div className="glass-panel" style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
+    <div 
+      className="glass-panel" 
+      ref={scrollContainerRef}
+      style={{ 
+        flex: 1, 
+        overflowY: 'auto', 
+        position: 'relative',
+        touchAction: isMobile ? 'none' : 'auto' 
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+    >
       <div 
         id="timetable-drop-zone"
         ref={containerRef}
         style={{ 
           position: 'relative', 
-          height: `${24 * 60}px`, 
+          height: `${24 * hourHeight}px`, 
           width: '100%',
-          userSelect: 'none',
-          touchAction: 'none' 
+          userSelect: 'none'
         }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -302,9 +365,9 @@ export default function Timetable({ date, items, setItems, onExternalDropRef }) 
             key={hour} 
             style={{ 
               position: 'absolute', 
-              top: `${hour * 60}px`, 
+              top: `${hour * hourHeight}px`, 
               width: '100%', 
-              height: '60px',
+              height: `${hourHeight}px`,
               borderBottom: '1px dashed var(--bg-tertiary)',
               display: 'flex',
               pointerEvents: 'none'

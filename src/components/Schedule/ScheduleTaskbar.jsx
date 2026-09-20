@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { List, X } from 'lucide-react';
 
-export default function ScheduleTaskbar({ isOpen, onClose, tasks, onTaskDragStart }) {
+export default function ScheduleTaskbar({ isOpen, onClose, tasks, onTaskDragStart, isMobile = false }) {
   const pressTimer = useRef(null);
 
   // Sort tasks by deadline, placing null deadlines at the end
@@ -47,22 +47,26 @@ export default function ScheduleTaskbar({ isOpen, onClose, tasks, onTaskDragStar
         padding: '1rem'
       }}
     >
-      <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 'bold' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><List size={20} /> タスク一覧</span>
-        <button 
-          className="btn-icon" 
-          onClick={onClose}
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          <X size={20} />
-        </button>
+      <h3 style={{ marginBottom: isMobile ? '0.5rem' : '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 'bold' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><List size={isMobile ? 16 : 20} /> タスク一覧</span>
+        {!isMobile && (
+          <button 
+            className="btn-icon" 
+            onClick={onClose}
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            <X size={20} />
+          </button>
+        )}
       </h3>
       
-      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-        ※タスクをタイムテーブルへドラッグ＆ドロップすると予定を作成できます
-      </div>
+      {!isMobile && (
+        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+          ※タスクをタイムテーブルへドラッグ＆ドロップすると予定を作成できます
+        </div>
+      )}
 
-      <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', paddingRight: '0.5rem' }}>
+      <div className={isMobile ? "schedule-taskbar-list" : ""} style={{ overflowY: isMobile ? 'hidden' : 'auto', flex: 1, display: 'flex', flexDirection: isMobile ? 'row' : 'column', paddingRight: isMobile ? '0' : '0.5rem' }}>
         {sortedTasks.map((t, idx) => (
           <div 
             key={t.id}
@@ -70,7 +74,7 @@ export default function ScheduleTaskbar({ isOpen, onClose, tasks, onTaskDragStar
             onPointerUp={cancelPress}
             onPointerLeave={cancelPress}
             onPointerMove={cancelPress} // Any movement cancels the long press
-            className="glass-panel"
+            className={`glass-panel ${isMobile ? 'schedule-taskbar-item' : ''}`}
             style={{
               padding: '0.75rem',
               borderLeft: `4px solid var(--sticky-${t.color || 'yellow'})`,

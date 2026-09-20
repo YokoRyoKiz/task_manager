@@ -173,6 +173,7 @@ body {
   .schedule-container {
     padding: 0.5rem !important;
     gap: 0.5rem !important;
+    flex-direction: column !important;
   }
 
   /* Header adjustments */
@@ -181,24 +182,45 @@ body {
     padding: 0.5rem !important;
   }
 
-  /* Schedule layout on mobile */
+  /* Timeline adjustments */
+  .schedule-timeline {
+    height: auto !important;
+    width: 100% !important;
+  }
+
   .schedule-timeline.mobile-hidden {
-    display: none !important;
-  }
-  
-  .schedule-taskbar {
-    position: relative !important;
-    width: 160px !important;
-    display: none !important;
-    border-left: none !important;
-  }
-  
-  .schedule-taskbar.mobile-open {
     display: flex !important;
   }
   
+  /* Taskbar adjustments */
+  .schedule-taskbar {
+    position: relative !important;
+    width: 100% !important;
+    height: auto !important;
+    flex-direction: column !important;
+    border-left: none !important;
+    border-bottom: 1px solid var(--glass-border);
+    right: 0 !important;
+    display: flex !important;
+    padding: 0.5rem !important;
+  }
+  
+  .schedule-taskbar-list {
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    gap: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+  
+  .schedule-taskbar-item {
+    min-width: 180px !important;
+    max-width: 200px !important;
+    margin-bottom: 0 !important;
+  }
+  
   .schedule-toggle-btn {
-    display: block !important;
+    display: none !important;
   }
 }
 

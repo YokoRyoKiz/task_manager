@@ -4,8 +4,8 @@ const NOTION_PROXY = '/notion-api/v1';
 const TASK_DB_ID = '32ac2487-daa9-8081-872a-e19285e2a862';
 const SCHEDULE_DB_ID = '3dec2487-daa9-8083-86dd-c94a7fa578c4';
 
-let cachedTaskTitleKey = (typeof window !== 'undefined' && localStorage.getItem('notion_task_title_key')) || null;
-let cachedScheduleTitleKey = (typeof window !== 'undefined' && localStorage.getItem('notion_schedule_title_key')) || null;
+let taskSchemaCache = null;
+let scheduleSchemaCache = null;
 
 // Helper to make API calls
 async function fetchNotion(endpoint, options = {}) {
@@ -26,42 +26,32 @@ async function fetchNotion(endpoint, options = {}) {
   return response.json();
 }
 
-async function getTaskTitleKey() {
-  if (cachedTaskTitleKey) return cachedTaskTitleKey;
+async function getTaskSchema() {
+  if (taskSchemaCache) return taskSchemaCache;
   try {
     const db = await fetchNotion(`/databases/${TASK_DB_ID}`);
     if (db && db.properties) {
-      for (const [key, prop] of Object.entries(db.properties)) {
-        if (prop.type === 'title') {
-          cachedTaskTitleKey = key;
-          if (typeof window !== 'undefined') localStorage.setItem('notion_task_title_key', key);
-          return key;
-        }
-      }
+      taskSchemaCache = db.properties;
+      return taskSchemaCache;
     }
   } catch (e) {
     console.warn('Failed to fetch task DB schema:', e);
   }
-  return cachedTaskTitleKey || '名前';
+  return taskSchemaCache;
 }
 
-async function getScheduleTitleKey() {
-  if (cachedScheduleTitleKey) return cachedScheduleTitleKey;
+async function getScheduleSchema() {
+  if (scheduleSchemaCache) return scheduleSchemaCache;
   try {
     const db = await fetchNotion(`/databases/${SCHEDULE_DB_ID}`);
     if (db && db.properties) {
-      for (const [key, prop] of Object.entries(db.properties)) {
-        if (prop.type === 'title') {
-          cachedScheduleTitleKey = key;
-          if (typeof window !== 'undefined') localStorage.setItem('notion_schedule_title_key', key);
-          return key;
-        }
-      }
+      scheduleSchemaCache = db.properties;
+      return scheduleSchemaCache;
     }
   } catch (e) {
     console.warn('Failed to fetch schedule DB schema:', e);
   }
-  return cachedScheduleTitleKey || '名前';
+  return scheduleSchemaCache;
 }
 
 // --- Task & Area Operations ---
@@ -72,6 +62,17 @@ export async function fetchTaskTree() {
     body: JSON.stringify({ page_size: 100 })
   });
 
+  if (data.results && data.results.length > 0 && !taskSchemaCache) {
+    taskSchemaCache = {};
+    for (const key in data.results[0].properties) {
+      taskSchemaCache[key] = {
+        type: data.results[0].properties[key].type,
+        id: data.results[0].properties[key].id,
+        name: key
+      };
+    }
+  }
+
   const tasks = [];
   const areas = [];
   
@@ -80,16 +81,12 @@ export async function fetchTaskTree() {
 
   for (const page of data.results) {
     const props = page.properties;
-    const type = props.type?.select?.name;
+    const type = props.type?.select?.name || props.type?.status?.name || 'task';
     
     let title = '名称未設定';
     for (const key in props) {
       if (props[key]?.type === 'title') {
         title = props[key].title?.[0]?.plain_text || '名称未設定';
-        if (!cachedTaskTitleKey || cachedTaskTitleKey !== key) {
-          cachedTaskTitleKey = key;
-          if (typeof window !== 'undefined') localStorage.setItem('notion_task_title_key', key);
-        }
         break;
       }
     }
@@ -113,7 +110,7 @@ export async function fetchTaskTree() {
         x: props.x_position?.number || 0,
         y: props.y_position?.number || 0,
         deadline: props.deadline?.date?.start || null,
-        color: props.color?.rich_text?.[0]?.plain_text || 'yellow'
+        color: props.color?.rich_text?.[0]?.plain_text || props.color?.select?.name || 'yellow'
       });
     } else if (type === 'area') {
       areas.push({
@@ -123,7 +120,7 @@ export async function fetchTaskTree() {
         y: props.y_position?.number || 0,
         width: props.end_x_position?.number ? props.end_x_position.number - (props.x_position?.number || 0) : 100,
         height: props.end_y_position?.number ? props.end_y_position.number - (props.y_position?.number || 0) : 100,
-        color: props.color?.rich_text?.[0]?.plain_text || 'rgba(255, 255, 255, 0.1)'
+        color: props.color?.rich_text?.[0]?.plain_text || props.color?.select?.name || 'rgba(255, 255, 255, 0.1)'
       });
     }
   }
@@ -131,36 +128,94 @@ export async function fetchTaskTree() {
 }
 
 export async function createTask(task) {
-  const titleKey = await getTaskTitleKey();
+  const schema = await getTaskSchema();
+  const properties = {};
+
+  const titlePropName = schema
+    ? Object.keys(schema).find(k => schema[k].type === 'title')
+    : null;
+  if (titlePropName) {
+    properties[titlePropName] = {
+      title: [{ text: { content: task.title || '名称未設定' } }]
+    };
+  }
+
+  if (!schema || schema['type']) {
+    const typePropType = schema?.['type']?.type || 'select';
+    if (typePropType === 'select') properties['type'] = { select: { name: 'task' } };
+    else if (typePropType === 'status') properties['type'] = { status: { name: 'task' } };
+    else if (typePropType === 'rich_text') properties['type'] = { rich_text: [{ text: { content: 'task' } }] };
+  }
+
+  if (!schema || schema['progress']) {
+    properties['progress'] = { number: Number(task.progress) || 0 };
+  }
+
+  if (!schema || schema['x_position']) {
+    properties['x_position'] = { number: Math.round(task.x ?? 0) };
+  }
+  if (!schema || schema['y_position']) {
+    properties['y_position'] = { number: Math.round(task.y ?? 0) };
+  }
+
+  if ((!schema || schema['deadline']) && task.deadline) {
+    properties['deadline'] = { date: { start: task.deadline } };
+  }
+
+  if (!schema || schema['color']) {
+    const colorPropType = schema?.['color']?.type || 'rich_text';
+    if (colorPropType === 'select') properties['color'] = { select: { name: task.color || 'yellow' } };
+    else properties['color'] = { rich_text: [{ text: { content: task.color || 'yellow' } }] };
+  }
+
   const data = await fetchNotion(`/pages`, {
     method: 'POST',
     body: JSON.stringify({
       parent: { database_id: TASK_DB_ID },
-      properties: {
-        [titleKey]: { title: [{ text: { content: task.title || '名称未設定' } }] },
-        type: { select: { name: 'task' } },
-        progress: { number: task.progress || 0 },
-        x_position: { number: task.x ?? 0 },
-        y_position: { number: task.y ?? 0 },
-        deadline: task.deadline ? { date: { start: task.deadline } } : null,
-        color: { rich_text: [{ text: { content: task.color || 'yellow' } }] }
-      }
+      properties
     })
   });
   return data.id;
 }
 
 export async function updateTask(taskId, updates) {
+  const schema = await getTaskSchema();
   const properties = {};
+
   if (updates.title !== undefined) {
-    const titleKey = await getTaskTitleKey();
-    properties[titleKey] = { title: [{ text: { content: updates.title || '名称未設定' } }] };
+    const titlePropName = schema
+      ? Object.keys(schema).find(k => schema[k].type === 'title')
+      : null;
+    if (titlePropName) {
+      properties[titlePropName] = {
+        title: [{ text: { content: updates.title || '名称未設定' } }]
+      };
+    }
   }
-  if (updates.progress !== undefined) properties.progress = { number: updates.progress };
-  if (updates.x !== undefined) properties.x_position = { number: updates.x };
-  if (updates.y !== undefined) properties.y_position = { number: updates.y };
-  if (updates.deadline !== undefined) properties.deadline = updates.deadline ? { date: { start: updates.deadline } } : null;
-  if (updates.color !== undefined) properties.color = { rich_text: [{ text: { content: updates.color } }] };
+
+  if (updates.progress !== undefined && (!schema || schema['progress'])) {
+    properties['progress'] = { number: Number(updates.progress) || 0 };
+  }
+
+  if (updates.x !== undefined && (!schema || schema['x_position'])) {
+    properties['x_position'] = { number: Math.round(updates.x) };
+  }
+
+  if (updates.y !== undefined && (!schema || schema['y_position'])) {
+    properties['y_position'] = { number: Math.round(updates.y) };
+  }
+
+  if (updates.deadline !== undefined && (!schema || schema['deadline'])) {
+    properties['deadline'] = updates.deadline ? { date: { start: updates.deadline } } : null;
+  }
+
+  if (updates.color !== undefined && (!schema || schema['color'])) {
+    const colorPropType = schema?.['color']?.type || 'rich_text';
+    if (colorPropType === 'select') properties['color'] = { select: { name: updates.color } };
+    else properties['color'] = { rich_text: [{ text: { content: updates.color } }] };
+  }
+
+  if (Object.keys(properties).length === 0) return;
 
   await fetchNotion(`/pages/${taskId}`, {
     method: 'PATCH',
@@ -169,35 +224,88 @@ export async function updateTask(taskId, updates) {
 }
 
 export async function createArea(area) {
-  const titleKey = await getTaskTitleKey();
+  const schema = await getTaskSchema();
+  const properties = {};
+
+  const titlePropName = schema
+    ? Object.keys(schema).find(k => schema[k].type === 'title')
+    : null;
+  if (titlePropName) {
+    properties[titlePropName] = {
+      title: [{ text: { content: area.name || '名称未設定' } }]
+    };
+  }
+
+  if (!schema || schema['type']) {
+    const typePropType = schema?.['type']?.type || 'select';
+    if (typePropType === 'select') properties['type'] = { select: { name: 'area' } };
+    else if (typePropType === 'status') properties['type'] = { status: { name: 'area' } };
+    else if (typePropType === 'rich_text') properties['type'] = { rich_text: [{ text: { content: 'area' } }] };
+  }
+
+  if (!schema || schema['x_position']) {
+    properties['x_position'] = { number: Math.round(area.x ?? 0) };
+  }
+  if (!schema || schema['y_position']) {
+    properties['y_position'] = { number: Math.round(area.y ?? 0) };
+  }
+
+  if (!schema || schema['end_x_position']) {
+    properties['end_x_position'] = { number: Math.round((area.x ?? 0) + (area.width ?? 100)) };
+  }
+  if (!schema || schema['end_y_position']) {
+    properties['end_y_position'] = { number: Math.round((area.y ?? 0) + (area.height ?? 100)) };
+  }
+
+  if (!schema || schema['color']) {
+    const colorPropType = schema?.['color']?.type || 'rich_text';
+    const colorVal = area.color || 'rgba(255, 255, 255, 0.1)';
+    if (colorPropType === 'select') properties['color'] = { select: { name: colorVal } };
+    else properties['color'] = { rich_text: [{ text: { content: colorVal } }] };
+  }
+
   const data = await fetchNotion(`/pages`, {
     method: 'POST',
     body: JSON.stringify({
       parent: { database_id: TASK_DB_ID },
-      properties: {
-        [titleKey]: { title: [{ text: { content: area.name || '名称未設定' } }] },
-        type: { select: { name: 'area' } },
-        x_position: { number: area.x ?? 0 },
-        y_position: { number: area.y ?? 0 },
-        end_x_position: { number: (area.x ?? 0) + (area.width ?? 100) },
-        end_y_position: { number: (area.y ?? 0) + (area.height ?? 100) },
-        color: { rich_text: [{ text: { content: area.color || 'rgba(255, 255, 255, 0.1)' } }] }
-      }
+      properties
     })
   });
   return data.id;
 }
 
 export async function updateArea(areaId, updates) {
+  const schema = await getTaskSchema();
   const properties = {};
+
   if (updates.name !== undefined) {
-    const titleKey = await getTaskTitleKey();
-    properties[titleKey] = { title: [{ text: { content: updates.name || '名称未設定' } }] };
+    const titlePropName = schema
+      ? Object.keys(schema).find(k => schema[k].type === 'title')
+      : null;
+    if (titlePropName) {
+      properties[titlePropName] = {
+        title: [{ text: { content: updates.name || '名称未設定' } }]
+      };
+    }
   }
-  if (updates.x !== undefined) properties.x_position = { number: updates.x };
-  if (updates.y !== undefined) properties.y_position = { number: updates.y };
-  if (updates.end_x !== undefined) properties.end_x_position = { number: updates.end_x };
-  if (updates.end_y !== undefined) properties.end_y_position = { number: updates.end_y };
+
+  if (updates.x !== undefined && (!schema || schema['x_position'])) {
+    properties['x_position'] = { number: Math.round(updates.x) };
+  }
+
+  if (updates.y !== undefined && (!schema || schema['y_position'])) {
+    properties['y_position'] = { number: Math.round(updates.y) };
+  }
+
+  if (updates.end_x !== undefined && (!schema || schema['end_x_position'])) {
+    properties['end_x_position'] = { number: Math.round(updates.end_x) };
+  }
+
+  if (updates.end_y !== undefined && (!schema || schema['end_y_position'])) {
+    properties['end_y_position'] = { number: Math.round(updates.end_y) };
+  }
+
+  if (Object.keys(properties).length === 0) return;
 
   await fetchNotion(`/pages/${areaId}`, {
     method: 'PATCH',
@@ -221,6 +329,17 @@ export async function fetchSchedules() {
     method: 'POST',
     body: JSON.stringify({ page_size: 100 })
   });
+
+  if (data.results && data.results.length > 0 && !scheduleSchemaCache) {
+    scheduleSchemaCache = {};
+    for (const key in data.results[0].properties) {
+      scheduleSchemaCache[key] = {
+        type: data.results[0].properties[key].type,
+        id: data.results[0].properties[key].id,
+        name: key
+      };
+    }
+  }
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -247,10 +366,6 @@ export async function fetchSchedules() {
     for (const key in props) {
       if (props[key]?.type === 'title') {
         title = props[key].title?.[0]?.plain_text || '名称未設定';
-        if (!cachedScheduleTitleKey || cachedScheduleTitleKey !== key) {
-          cachedScheduleTitleKey = key;
-          if (typeof window !== 'undefined') localStorage.setItem('notion_schedule_title_key', key);
-        }
         break;
       }
     }
@@ -268,31 +383,68 @@ export async function fetchSchedules() {
 }
 
 export async function createSchedule(item) {
-  const titleKey = await getScheduleTitleKey();
+  const schema = await getScheduleSchema();
+  const properties = {};
+
+  const titlePropName = schema
+    ? Object.keys(schema).find(k => schema[k].type === 'title')
+    : null;
+  if (titlePropName) {
+    properties[titlePropName] = {
+      title: [{ text: { content: item.title || '名称未設定' } }]
+    };
+  }
+
+  if (!schema || schema['target_date']) {
+    properties['target_date'] = { date: { start: item.date.split('T')[0] } };
+  }
+
+  if (!schema || schema['start_time']) {
+    properties['start_time'] = { number: Number(item.startHour) || 0 };
+  }
+
+  if (!schema || schema['end_time']) {
+    properties['end_time'] = { number: Number(item.endHour) || 1 };
+  }
+
   const data = await fetchNotion(`/pages`, {
     method: 'POST',
     body: JSON.stringify({
       parent: { database_id: SCHEDULE_DB_ID },
-      properties: {
-        [titleKey]: { title: [{ text: { content: item.title || '名称未設定' } }] },
-        target_date: { date: { start: item.date.split('T')[0] } },
-        start_time: { number: item.startHour },
-        end_time: { number: item.endHour }
-      }
+      properties
     })
   });
   return data.id;
 }
 
 export async function updateSchedule(scheduleId, updates) {
+  const schema = await getScheduleSchema();
   const properties = {};
+
   if (updates.title !== undefined) {
-    const titleKey = await getScheduleTitleKey();
-    properties[titleKey] = { title: [{ text: { content: updates.title || '名称未設定' } }] };
+    const titlePropName = schema
+      ? Object.keys(schema).find(k => schema[k].type === 'title')
+      : null;
+    if (titlePropName) {
+      properties[titlePropName] = {
+        title: [{ text: { content: updates.title || '名称未設定' } }]
+      };
+    }
   }
-  if (updates.date !== undefined) properties.target_date = { date: { start: updates.date.split('T')[0] } };
-  if (updates.startHour !== undefined) properties.start_time = { number: updates.startHour };
-  if (updates.endHour !== undefined) properties.end_time = { number: updates.endHour };
+
+  if (updates.date !== undefined && (!schema || schema['target_date'])) {
+    properties['target_date'] = { date: { start: updates.date.split('T')[0] } };
+  }
+
+  if (updates.startHour !== undefined && (!schema || schema['start_time'])) {
+    properties['start_time'] = { number: Number(updates.startHour) || 0 };
+  }
+
+  if (updates.endHour !== undefined && (!schema || schema['end_time'])) {
+    properties['end_time'] = { number: Number(updates.endHour) || 1 };
+  }
+
+  if (Object.keys(properties).length === 0) return;
 
   await fetchNotion(`/pages/${scheduleId}`, {
     method: 'PATCH',

@@ -54,6 +54,33 @@ async function getScheduleSchema() {
   return scheduleSchemaCache;
 }
 
+function extractTitleFromProps(props) {
+  // 1. If there's a property specifically named 'title', check it first
+  if (props.title) {
+    const t = props.title.rich_text?.[0]?.plain_text ||
+              props.title.title?.[0]?.plain_text ||
+              props.title.select?.name;
+    if (t) return t;
+  }
+  // 2. Check common name columns (名前, タスク名, name, Name)
+  for (const nameKey of ['名前', 'タスク名', 'name', 'Name']) {
+    if (props[nameKey]) {
+      const t = props[nameKey].title?.[0]?.plain_text ||
+                props[nameKey].rich_text?.[0]?.plain_text ||
+                props[nameKey].select?.name;
+      if (t) return t;
+    }
+  }
+  // 3. Fallback to any property with type === 'title'
+  for (const key in props) {
+    if (props[key]?.type === 'title') {
+      const t = props[key].title?.[0]?.plain_text;
+      if (t) return t;
+    }
+  }
+  return '名称未設定';
+}
+
 // --- Task & Area Operations ---
 
 export async function fetchTaskTree() {
@@ -82,14 +109,7 @@ export async function fetchTaskTree() {
   for (const page of data.results) {
     const props = page.properties;
     const type = props.type?.select?.name || props.type?.status?.name || 'task';
-    
-    let title = '名称未設定';
-    for (const key in props) {
-      if (props[key]?.type === 'title') {
-        title = props[key].title?.[0]?.plain_text || '名称未設定';
-        break;
-      }
-    }
+    const title = extractTitleFromProps(props);
 
     if (type === 'task') {
       const progress = props.progress?.number || 0;
@@ -116,6 +136,7 @@ export async function fetchTaskTree() {
       areas.push({
         id: page.id,
         name: title,
+        title: title,
         x: props.x_position?.number || 0,
         y: props.y_position?.number || 0,
         width: props.end_x_position?.number ? props.end_x_position.number - (props.x_position?.number || 0) : 100,
@@ -130,14 +151,29 @@ export async function fetchTaskTree() {
 export async function createTask(task) {
   const schema = await getTaskSchema();
   const properties = {};
+  const taskTitle = task.title || '名称未設定';
 
   const titlePropName = schema
     ? Object.keys(schema).find(k => schema[k].type === 'title')
     : null;
   if (titlePropName) {
     properties[titlePropName] = {
-      title: [{ text: { content: task.title || '名称未設定' } }]
+      title: [{ text: { content: titlePropName.toLowerCase() === 'id' ? (task.id || taskTitle) : taskTitle } }]
     };
+  }
+
+  if (schema?.['title'] && schema['title'].type !== 'title') {
+    if (schema['title'].type === 'rich_text') {
+      properties['title'] = { rich_text: [{ text: { content: taskTitle } }] };
+    } else if (schema['title'].type === 'select') {
+      properties['title'] = { select: { name: taskTitle } };
+    }
+  }
+  if (schema?.['名前'] && schema['名前'].type !== 'title' && schema['名前'].type === 'rich_text') {
+    properties['名前'] = { rich_text: [{ text: { content: taskTitle } }] };
+  }
+  if (schema?.['タスク名'] && schema['タスク名'].type !== 'title' && schema['タスク名'].type === 'rich_text') {
+    properties['タスク名'] = { rich_text: [{ text: { content: taskTitle } }] };
   }
 
   if (!schema || schema['type']) {
@@ -181,15 +217,29 @@ export async function createTask(task) {
 export async function updateTask(taskId, updates) {
   const schema = await getTaskSchema();
   const properties = {};
+  const taskTitle = updates.title;
 
-  if (updates.title !== undefined) {
+  if (taskTitle !== undefined) {
     const titlePropName = schema
       ? Object.keys(schema).find(k => schema[k].type === 'title')
       : null;
     if (titlePropName) {
       properties[titlePropName] = {
-        title: [{ text: { content: updates.title || '名称未設定' } }]
+        title: [{ text: { content: titlePropName.toLowerCase() === 'id' ? taskId : (taskTitle || '名称未設定') } }]
       };
+    }
+    if (schema?.['title'] && schema['title'].type !== 'title') {
+      if (schema['title'].type === 'rich_text') {
+        properties['title'] = { rich_text: [{ text: { content: taskTitle || '名称未設定' } }] };
+      } else if (schema['title'].type === 'select') {
+        properties['title'] = { select: { name: taskTitle || '名称未設定' } };
+      }
+    }
+    if (schema?.['名前'] && schema['名前'].type !== 'title' && schema['名前'].type === 'rich_text') {
+      properties['名前'] = { rich_text: [{ text: { content: taskTitle || '名称未設定' } }] };
+    }
+    if (schema?.['タスク名'] && schema['タスク名'].type !== 'title' && schema['タスク名'].type === 'rich_text') {
+      properties['タスク名'] = { rich_text: [{ text: { content: taskTitle || '名称未設定' } }] };
     }
   }
 
@@ -226,14 +276,29 @@ export async function updateTask(taskId, updates) {
 export async function createArea(area) {
   const schema = await getTaskSchema();
   const properties = {};
+  const areaName = area.name || area.title || '名称未設定';
 
   const titlePropName = schema
     ? Object.keys(schema).find(k => schema[k].type === 'title')
     : null;
   if (titlePropName) {
     properties[titlePropName] = {
-      title: [{ text: { content: area.name || '名称未設定' } }]
+      title: [{ text: { content: titlePropName.toLowerCase() === 'id' ? (area.id || areaName) : areaName } }]
     };
+  }
+
+  if (schema?.['title'] && schema['title'].type !== 'title') {
+    if (schema['title'].type === 'rich_text') {
+      properties['title'] = { rich_text: [{ text: { content: areaName } }] };
+    } else if (schema['title'].type === 'select') {
+      properties['title'] = { select: { name: areaName } };
+    }
+  }
+  if (schema?.['name'] && schema['name'].type !== 'title' && schema['name'].type === 'rich_text') {
+    properties['name'] = { rich_text: [{ text: { content: areaName } }] };
+  }
+  if (schema?.['名前'] && schema['名前'].type !== 'title' && schema['名前'].type === 'rich_text') {
+    properties['名前'] = { rich_text: [{ text: { content: areaName } }] };
   }
 
   if (!schema || schema['type']) {
@@ -277,15 +342,29 @@ export async function createArea(area) {
 export async function updateArea(areaId, updates) {
   const schema = await getTaskSchema();
   const properties = {};
+  const areaName = updates.name !== undefined ? updates.name : updates.title;
 
-  if (updates.name !== undefined) {
+  if (areaName !== undefined) {
     const titlePropName = schema
       ? Object.keys(schema).find(k => schema[k].type === 'title')
       : null;
     if (titlePropName) {
       properties[titlePropName] = {
-        title: [{ text: { content: updates.name || '名称未設定' } }]
+        title: [{ text: { content: titlePropName.toLowerCase() === 'id' ? areaId : (areaName || '名称未設定') } }]
       };
+    }
+    if (schema?.['title'] && schema['title'].type !== 'title') {
+      if (schema['title'].type === 'rich_text') {
+        properties['title'] = { rich_text: [{ text: { content: areaName || '名称未設定' } }] };
+      } else if (schema['title'].type === 'select') {
+        properties['title'] = { select: { name: areaName || '名称未設定' } };
+      }
+    }
+    if (schema?.['name'] && schema['name'].type !== 'title' && schema['name'].type === 'rich_text') {
+      properties['name'] = { rich_text: [{ text: { content: areaName || '名称未設定' } }] };
+    }
+    if (schema?.['名前'] && schema['名前'].type !== 'title' && schema['名前'].type === 'rich_text') {
+      properties['名前'] = { rich_text: [{ text: { content: areaName || '名称未設定' } }] };
     }
   }
 
@@ -362,13 +441,7 @@ export async function fetchSchedules() {
       }
     }
 
-    let title = '名称未設定';
-    for (const key in props) {
-      if (props[key]?.type === 'title') {
-        title = props[key].title?.[0]?.plain_text || '名称未設定';
-        break;
-      }
-    }
+    const title = extractTitleFromProps(props);
 
     schedules.push({
       id: page.id,
@@ -385,14 +458,23 @@ export async function fetchSchedules() {
 export async function createSchedule(item) {
   const schema = await getScheduleSchema();
   const properties = {};
+  const scheduleTitle = item.title || '名称未設定';
 
   const titlePropName = schema
     ? Object.keys(schema).find(k => schema[k].type === 'title')
     : null;
   if (titlePropName) {
     properties[titlePropName] = {
-      title: [{ text: { content: item.title || '名称未設定' } }]
+      title: [{ text: { content: titlePropName.toLowerCase() === 'id' ? (item.id || scheduleTitle) : scheduleTitle } }]
     };
+  }
+
+  if (schema?.['title'] && schema['title'].type !== 'title') {
+    if (schema['title'].type === 'rich_text') {
+      properties['title'] = { rich_text: [{ text: { content: scheduleTitle } }] };
+    } else if (schema['title'].type === 'select') {
+      properties['title'] = { select: { name: scheduleTitle } };
+    }
   }
 
   if (!schema || schema['target_date']) {
@@ -420,15 +502,23 @@ export async function createSchedule(item) {
 export async function updateSchedule(scheduleId, updates) {
   const schema = await getScheduleSchema();
   const properties = {};
+  const scheduleTitle = updates.title;
 
-  if (updates.title !== undefined) {
+  if (scheduleTitle !== undefined) {
     const titlePropName = schema
       ? Object.keys(schema).find(k => schema[k].type === 'title')
       : null;
     if (titlePropName) {
       properties[titlePropName] = {
-        title: [{ text: { content: updates.title || '名称未設定' } }]
+        title: [{ text: { content: titlePropName.toLowerCase() === 'id' ? scheduleId : (scheduleTitle || '名称未設定') } }]
       };
+    }
+    if (schema?.['title'] && schema['title'].type !== 'title') {
+      if (schema['title'].type === 'rich_text') {
+        properties['title'] = { rich_text: [{ text: { content: scheduleTitle || '名称未設定' } }] };
+      } else if (schema['title'].type === 'select') {
+        properties['title'] = { select: { name: scheduleTitle || '名称未設定' } };
+      }
     }
   }
 

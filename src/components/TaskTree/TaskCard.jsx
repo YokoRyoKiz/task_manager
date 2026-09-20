@@ -28,6 +28,7 @@ export default function TaskCard({ task, isInteracting, isHeld, onPointerDown, o
         opacity: isHeld ? 0.95 : 1
       }}
       onPointerDown={(e) => {
+        if (e.target.closest('button')) return;
         e.stopPropagation();
         onPointerDown(e, task);
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -50,11 +51,19 @@ export default function TaskCard({ task, isInteracting, isHeld, onPointerDown, o
         </div>
       )}
       
-      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(0,0,0,0.1)', paddingTop: '0.5rem' }}>
+      <div 
+        style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(0,0,0,0.1)', paddingTop: '0.5rem', pointerEvents: 'auto' }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <button 
           className="btn-icon" 
           title="タスクを分解"
-          style={{ padding: '0.25rem', color: '#475569' }}
+          style={{ padding: '0.25rem', color: '#475569', cursor: 'pointer', zIndex: 20 }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onSplitClick(task);
@@ -65,7 +74,10 @@ export default function TaskCard({ task, isInteracting, isHeld, onPointerDown, o
         <button 
           className="btn-icon" 
           title="削除"
-          style={{ padding: '0.25rem', color: '#ef4444' }}
+          style={{ padding: '0.25rem', color: '#ef4444', cursor: 'pointer', zIndex: 20 }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onDelete(task.id);

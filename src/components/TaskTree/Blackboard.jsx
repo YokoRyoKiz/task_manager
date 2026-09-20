@@ -5,7 +5,7 @@ import AddTaskModal from './AddTaskModal';
 import AddAreaModal from './AddAreaModal';
 import { createTask, updateTask, deletePage, createArea, updateArea } from '../../api/notion';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, List, ChevronRight, X } from 'lucide-react';
+import { Plus, List, ChevronRight, X, Trash2 } from 'lucide-react';
 
 export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
   const [pan, setPan] = useState({ 
@@ -593,9 +593,31 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
                 color: 'var(--text-primary)',
                 fontWeight: 'bold',
                 fontSize: '1.25rem',
-                marginTop: '15px'
+                marginTop: '15px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                pointerEvents: 'auto'
               }}>
-                {area.name}
+                <span>{area.name || area.title}</span>
+                <button
+                  className="btn-icon"
+                  title="領域を削除"
+                  style={{ padding: '0.25rem', color: '#ef4444', cursor: 'pointer', zIndex: 12 }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (setAreas) {
+                      setAreas(areas.filter(a => a.id !== area.id));
+                    }
+                    deletePage(area.id).catch(err => console.error(err));
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
               </div>
             </div>
           )})}

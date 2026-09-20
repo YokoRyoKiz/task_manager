@@ -32,6 +32,17 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
   const [isAddingTask, setIsAddingTask] = useState(false);
   const boardRef = useRef(null);
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState(null);
+  const bgHoldTimerRef = useRef(null);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const colors = ['yellow', 'pink', 'blue', 'green'];
 
   // --- Spatial Sorting Algorithm ---
@@ -101,17 +112,31 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
     }
   };
 
-  // Drag to create area
+  // Drag to create area or pan
   const handlePointerDown = (e) => {
     if (e.target === boardRef.current) {
       const rect = boardRef.current.getBoundingClientRect();
       const startX = (e.clientX - rect.left - pan.x) / scale;
       const startY = (e.clientY - rect.top - pan.y) / scale;
       
-      setIsDrawingArea(true);
-      setAreaStart({ x: startX, y: startY });
-      setCurrentArea({ x: startX, y: startY, width: 0, height: 0 });
-      e.target.setPointerCapture(e.pointerId);
+      if (isMobile) {
+        setIsPanning(true);
+        setPanStart({ clientX: e.clientX, clientY: e.clientY, initialPan: pan });
+        e.target.setPointerCapture(e.pointerId);
+
+        bgHoldTimerRef.current = setTimeout(() => {
+          setIsPanning(false);
+          setIsDrawingArea(true);
+          setAreaStart({ x: startX, y: startY });
+          setCurrentArea({ x: startX, y: startY, width: 0, height: 0 });
+          if (navigator.vibrate) navigator.vibrate(50);
+        }, 250);
+      } else {
+        setIsDrawingArea(true);
+        setAreaStart({ x: startX, y: startY });
+        setCurrentArea({ x: startX, y: startY, width: 0, height: 0 });
+        e.target.setPointerCapture(e.pointerId);
+      }
     }
   };
 
@@ -133,7 +158,20 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
       }
     }
 
-    if (isDrawingArea) {
+    if (bgHoldTimerRef.current && isPanning) {
+      const dx = Math.abs(e.clientX - panStart.clientX);
+      const dy = Math.abs(e.clientY - panStart.clientY);
+      if (dx > 10 || dy > 10) {
+        clearTimeout(bgHoldTimerRef.current);
+        bgHoldTimerRef.current = null;
+      }
+    }
+
+    if (isPanning && !isDrawingArea) {
+      const dx = e.clientX - panStart.clientX;
+      const dy = e.clientY - panStart.clientY;
+      setPan({ x: panStart.initialPan.x + dx, y: panStart.initialPan.y + dy });
+    } else if (isDrawingArea) {
       const rect = boardRef.current.getBoundingClientRect();
       const currentX = (e.clientX - rect.left - pan.x) / scale;
       const currentY = (e.clientY - rect.top - pan.y) / scale;
@@ -185,6 +223,16 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
   };
 
   const handlePointerUp = (e) => {
+    if (bgHoldTimerRef.current) {
+      clearTimeout(bgHoldTimerRef.current);
+      bgHoldTimerRef.current = null;
+    }
+    
+    if (isPanning) {
+      setIsPanning(false);
+      try { e.target.releasePointerCapture(e.pointerId); } catch(err) {}
+    }
+
     if (holdTimerRef.current) {
       clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
@@ -346,6 +394,48 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
     }
   };
 
+  const initialTouchRef = useRef(null);
+
+  const handleTouchStart = (e) => {
+    if (!isMobile) return;
+    if (e.touches.length === 2) {
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const distance = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+      initialTouchRef.current = { distance, initialScale: scale };
+      
+      setIsPanning(false);
+      setIsDrawingArea(false);
+      if (bgHoldTimerRef.current) {
+        clearTimeout(bgHoldTimerRef.current);
+        bgHoldTimerRef.current = null;
+      }
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isMobile) return;
+    if (e.touches.length === 2 && initialTouchRef.current) {
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const currentDistance = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+      
+      const { distance, initialScale } = initialTouchRef.current;
+      if (distance > 20) {
+        const ratio = currentDistance / distance;
+        const newScale = Math.min(Math.max(0.1, initialScale * ratio), 3);
+        setScale(newScale);
+      }
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (!isMobile) return;
+    if (e.touches.length < 2) {
+      initialTouchRef.current = null;
+    }
+  };
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
       {/* Fixed UI Controls */}
@@ -398,6 +488,10 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
           overscrollBehavior: 'none'
         }}
         onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

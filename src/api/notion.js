@@ -19,9 +19,15 @@ async function fetchNotion(endpoint, options = {}) {
   });
   if (!response.ok) {
     const errorText = await response.text();
-    const errorMsg = `Notion API Error: ${response.status} - ${errorText}`;
-    if (typeof window !== 'undefined') window.alert("【DB保存エラー】\n" + errorMsg);
-    throw new Error(errorMsg);
+    let detail = `Notion API Error: ${response.status} - ${errorText}`;
+    if (options.body) {
+      detail += `\n\n【送信Payload】\n${options.body}`;
+    }
+    if (taskSchemaCache) {
+      detail += `\n\n【Task DB Schema】\n` + JSON.stringify(Object.keys(taskSchemaCache).map(k => `${k} (${taskSchemaCache[k].type})`), null, 2);
+    }
+    if (typeof window !== 'undefined') window.alert("【DB保存エラー】\n" + detail);
+    throw new Error(detail);
   }
   return response.json();
 }
@@ -55,19 +61,19 @@ async function getScheduleSchema() {
 }
 
 function extractTitleFromProps(props) {
-  // 1. Check common title/name properties
+  // 1. Find the property that has type === 'title'
+  for (const key in props) {
+    if (props[key]?.type === 'title') {
+      const t = props[key].title?.[0]?.plain_text;
+      if (t) return t;
+    }
+  }
+  // 2. Check common name/title properties
   for (const nameKey of ['名前', 'タスク名', 'name', 'Name', 'title', 'Title']) {
     if (props[nameKey]) {
       const t = props[nameKey].title?.[0]?.plain_text ||
                 props[nameKey].rich_text?.[0]?.plain_text ||
                 props[nameKey].select?.name;
-      if (t) return t;
-    }
-  }
-  // 2. Fallback to any property with type === 'title'
-  for (const key in props) {
-    if (props[key]?.type === 'title') {
-      const t = props[key].title?.[0]?.plain_text;
       if (t) return t;
     }
   }
@@ -79,7 +85,7 @@ async function buildTaskProperties(data, isCreate = true) {
   const properties = {};
   const titleText = data.title !== undefined ? data.title : (data.name !== undefined ? data.name : (isCreate ? '名称未設定' : undefined));
 
-  // Find the exact title property name from schema
+  // 1. Find the title column (the column whose schema type is 'title')
   let titlePropName = null;
   if (schema) {
     for (const [key, prop] of Object.entries(schema)) {
@@ -90,7 +96,6 @@ async function buildTaskProperties(data, isCreate = true) {
     }
   }
 
-  // If titleText is provided (or creating a new page), always set the title property
   if (titleText !== undefined) {
     const propKey = titlePropName || '名前';
     properties[propKey] = {
@@ -98,102 +103,74 @@ async function buildTaskProperties(data, isCreate = true) {
     };
   }
 
-  // Type property ('task' | 'area')
-  if (data.type !== undefined) {
-    const typeKey = schema && Object.keys(schema).find(k => k.toLowerCase() === 'type');
-    const targetKey = typeKey || 'type';
-    const typePropType = schema?.[targetKey]?.type || 'select';
-    if (typePropType === 'select') {
-      properties[targetKey] = { select: { name: String(data.type) } };
-    } else if (typePropType === 'status') {
-      properties[targetKey] = { status: { name: String(data.type) } };
-    } else if (typePropType === 'rich_text') {
-      properties[targetKey] = { rich_text: [{ text: { content: String(data.type) } }] };
+  // 2. Only add other properties if they exist in schema and match expected types
+  if (schema) {
+    // Type ('task' | 'area')
+    if (data.type !== undefined && schema['type']) {
+      if (schema['type'].type === 'select') properties['type'] = { select: { name: String(data.type) } };
+      else if (schema['type'].type === 'status') properties['type'] = { status: { name: String(data.type) } };
+      else if (schema['type'].type === 'rich_text') properties['type'] = { rich_text: [{ text: { content: String(data.type) } }] };
+    } else if (isCreate && schema['type']) {
+      const defType = data.type || 'task';
+      if (schema['type'].type === 'select') properties['type'] = { select: { name: defType } };
+      else if (schema['type'].type === 'status') properties['type'] = { status: { name: defType } };
+      else if (schema['type'].type === 'rich_text') properties['type'] = { rich_text: [{ text: { content: defType } }] };
     }
-  } else if (isCreate && (!schema || schema['type'])) {
-    const typePropType = schema?.['type']?.type || 'select';
-    if (typePropType === 'select') properties['type'] = { select: { name: 'task' } };
-    else if (typePropType === 'status') properties['type'] = { status: { name: 'task' } };
-    else if (typePropType === 'rich_text') properties['type'] = { rich_text: [{ text: { content: 'task' } }] };
-  }
 
-  // Progress
-  if (data.progress !== undefined) {
-    const progressKey = schema && Object.keys(schema).find(k => k.toLowerCase() === 'progress');
-    const targetKey = progressKey || 'progress';
-    if (!schema || schema[targetKey]?.type === 'number') {
-      properties[targetKey] = { number: Number(data.progress) || 0 };
+    // Progress
+    if (data.progress !== undefined && schema['progress']?.type === 'number') {
+      properties['progress'] = { number: Number(data.progress) || 0 };
+    } else if (isCreate && schema['progress']?.type === 'number') {
+      properties['progress'] = { number: 0 };
     }
-  } else if (isCreate && (!schema || schema['progress']?.type === 'number')) {
-    properties['progress'] = { number: 0 };
-  }
 
-  // x_position
-  if (data.x !== undefined) {
-    const xKey = schema && Object.keys(schema).find(k => k.toLowerCase() === 'x_position');
-    const targetKey = xKey || 'x_position';
-    if (!schema || schema[targetKey]?.type === 'number') {
-      properties[targetKey] = { number: Math.round(Number(data.x) || 0) };
+    // x_position
+    if (data.x !== undefined && schema['x_position']?.type === 'number') {
+      properties['x_position'] = { number: Math.round(Number(data.x) || 0) };
+    } else if (isCreate && schema['x_position']?.type === 'number') {
+      properties['x_position'] = { number: Math.round(Number(data.x) || 0) };
     }
-  } else if (isCreate && (!schema || schema['x_position']?.type === 'number')) {
-    properties['x_position'] = { number: Math.round(Number(data.x) || 0) };
-  }
 
-  // y_position
-  if (data.y !== undefined) {
-    const yKey = schema && Object.keys(schema).find(k => k.toLowerCase() === 'y_position');
-    const targetKey = yKey || 'y_position';
-    if (!schema || schema[targetKey]?.type === 'number') {
-      properties[targetKey] = { number: Math.round(Number(data.y) || 0) };
+    // y_position
+    if (data.y !== undefined && schema['y_position']?.type === 'number') {
+      properties['y_position'] = { number: Math.round(Number(data.y) || 0) };
+    } else if (isCreate && schema['y_position']?.type === 'number') {
+      properties['y_position'] = { number: Math.round(Number(data.y) || 0) };
     }
-  } else if (isCreate && (!schema || schema['y_position']?.type === 'number')) {
-    properties['y_position'] = { number: Math.round(Number(data.y) || 0) };
-  }
 
-  // end_x_position (for area)
-  if (data.end_x !== undefined || data.width !== undefined) {
-    const endXVal = data.end_x !== undefined ? data.end_x : ((data.x || 0) + (data.width || 100));
-    const endXKey = schema && Object.keys(schema).find(k => k.toLowerCase() === 'end_x_position');
-    const targetKey = endXKey || 'end_x_position';
-    if (!schema || schema[targetKey]?.type === 'number') {
-      properties[targetKey] = { number: Math.round(Number(endXVal) || 0) };
+    // end_x_position (area)
+    if (schema['end_x_position']?.type === 'number') {
+      if (data.end_x !== undefined) {
+        properties['end_x_position'] = { number: Math.round(Number(data.end_x) || 0) };
+      } else if (data.width !== undefined && data.x !== undefined) {
+        properties['end_x_position'] = { number: Math.round((Number(data.x) || 0) + (Number(data.width) || 100)) };
+      }
     }
-  }
 
-  // end_y_position (for area)
-  if (data.end_y !== undefined || data.height !== undefined) {
-    const endYVal = data.end_y !== undefined ? data.end_y : ((data.y || 0) + (data.height || 100));
-    const endYKey = schema && Object.keys(schema).find(k => k.toLowerCase() === 'end_y_position');
-    const targetKey = endYKey || 'end_y_position';
-    if (!schema || schema[targetKey]?.type === 'number') {
-      properties[targetKey] = { number: Math.round(Number(endYVal) || 0) };
+    // end_y_position (area)
+    if (schema['end_y_position']?.type === 'number') {
+      if (data.end_y !== undefined) {
+        properties['end_y_position'] = { number: Math.round(Number(data.end_y) || 0) };
+      } else if (data.height !== undefined && data.y !== undefined) {
+        properties['end_y_position'] = { number: Math.round((Number(data.y) || 0) + (Number(data.height) || 100)) };
+      }
     }
-  }
 
-  // Deadline
-  if (data.deadline !== undefined) {
-    const dKey = schema && Object.keys(schema).find(k => k.toLowerCase() === 'deadline');
-    const targetKey = dKey || 'deadline';
-    if (!schema || schema[targetKey]?.type === 'date') {
-      properties[targetKey] = data.deadline ? { date: { start: data.deadline } } : null;
+    // Deadline
+    if (schema['deadline']?.type === 'date') {
+      if (data.deadline !== undefined) {
+        properties['deadline'] = data.deadline ? { date: { start: data.deadline } } : null;
+      }
     }
-  }
 
-  // Color
-  if (data.color !== undefined) {
-    const cKey = schema && Object.keys(schema).find(k => k.toLowerCase() === 'color');
-    const targetKey = cKey || 'color';
-    const colorPropType = schema?.[targetKey]?.type || 'rich_text';
-    if (colorPropType === 'select') {
-      properties[targetKey] = { select: { name: String(data.color) } };
-    } else {
-      properties[targetKey] = { rich_text: [{ text: { content: String(data.color) } }] };
+    // Color
+    if (schema['color']) {
+      const colorVal = data.color || (data.type === 'area' ? 'rgba(255, 255, 255, 0.1)' : 'yellow');
+      if (data.color !== undefined || isCreate) {
+        if (schema['color'].type === 'select') properties['color'] = { select: { name: String(colorVal) } };
+        else if (schema['color'].type === 'rich_text') properties['color'] = { rich_text: [{ text: { content: String(colorVal) } }] };
+      }
     }
-  } else if (isCreate && (!schema || schema['color'])) {
-    const colorPropType = schema?.['color']?.type || 'rich_text';
-    const defaultColor = data.type === 'area' ? 'rgba(255, 255, 255, 0.1)' : 'yellow';
-    if (colorPropType === 'select') properties['color'] = { select: { name: defaultColor } };
-    else properties['color'] = { rich_text: [{ text: { content: defaultColor } }] };
   }
 
   return properties;
@@ -221,27 +198,15 @@ async function buildScheduleProperties(data, isCreate = true) {
     };
   }
 
-  if (data.date !== undefined) {
-    const dKey = schema && Object.keys(schema).find(k => k.toLowerCase() === 'target_date');
-    const targetKey = dKey || 'target_date';
-    if (!schema || schema[targetKey]?.type === 'date') {
-      properties[targetKey] = { date: { start: data.date.split('T')[0] } };
+  if (schema) {
+    if (data.date !== undefined && schema['target_date']?.type === 'date') {
+      properties['target_date'] = { date: { start: data.date.split('T')[0] } };
     }
-  }
-
-  if (data.startHour !== undefined) {
-    const sKey = schema && Object.keys(schema).find(k => k.toLowerCase() === 'start_time');
-    const targetKey = sKey || 'start_time';
-    if (!schema || schema[targetKey]?.type === 'number') {
-      properties[targetKey] = { number: Number(data.startHour) || 0 };
+    if (data.startHour !== undefined && schema['start_time']?.type === 'number') {
+      properties['start_time'] = { number: Number(data.startHour) || 0 };
     }
-  }
-
-  if (data.endHour !== undefined) {
-    const eKey = schema && Object.keys(schema).find(k => k.toLowerCase() === 'end_time');
-    const targetKey = eKey || 'end_time';
-    if (!schema || schema[targetKey]?.type === 'number') {
-      properties[targetKey] = { number: Number(data.endHour) || 1 };
+    if (data.endHour !== undefined && schema['end_time']?.type === 'number') {
+      properties['end_time'] = { number: Number(data.endHour) || 1 };
     }
   }
 
@@ -251,6 +216,8 @@ async function buildScheduleProperties(data, isCreate = true) {
 // --- Task & Area Operations ---
 
 export async function fetchTaskTree() {
+  await getTaskSchema();
+
   const data = await fetchNotion(`/databases/${TASK_DB_ID}/query`, {
     method: 'POST',
     body: JSON.stringify({ page_size: 100 })
@@ -376,6 +343,8 @@ export async function deletePage(pageId) {
 // --- Schedule Operations ---
 
 export async function fetchSchedules() {
+  await getScheduleSchema();
+
   const data = await fetchNotion(`/databases/${SCHEDULE_DB_ID}/query`, {
     method: 'POST',
     body: JSON.stringify({ page_size: 100 })

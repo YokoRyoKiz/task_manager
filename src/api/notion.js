@@ -16,7 +16,9 @@ async function fetchNotion(endpoint, options = {}) {
   });
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Notion API Error: ${response.status} - ${errorText}`);
+    const errorMsg = `Notion API Error: ${response.status} - ${errorText}`;
+    if (typeof window !== 'undefined') window.alert("【DB保存エラー】\n" + errorMsg);
+    throw new Error(errorMsg);
   }
   return response.json();
 }

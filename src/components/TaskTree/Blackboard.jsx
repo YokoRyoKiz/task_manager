@@ -115,6 +115,7 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
 
   // Drag to create area or pan
   const handlePointerDown = (e) => {
+    if (!e.isPrimary) return;
     if (e.target === boardRef.current) {
       const rect = boardRef.current.getBoundingClientRect();
       const startX = (e.clientX - rect.left - pan.x) / scale;
@@ -132,6 +133,7 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
         setAreaStart({ x: startX, y: startY });
         setCurrentArea({ x: startX, y: startY, width: 0, height: 0 });
         if (navigator.vibrate) navigator.vibrate(50);
+        bgHoldTimerRef.current = null;
       }, 250);
     }
   };
@@ -318,6 +320,7 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
   };
 
   const handleTaskPointerDown = (e, task) => {
+    if (!e.isPrimary) return;
     const rect = boardRef.current.getBoundingClientRect();
     const interactionData = {
       id: task.id,

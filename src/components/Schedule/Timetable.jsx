@@ -32,6 +32,7 @@ export default function Timetable({ date, items, setItems, onExternalDropRef, is
   const longPressTimerRef = useRef(null);
 
   const handlePointerDown = (e) => {
+    if (!e.isPrimary) return;
     // Only start drag if clicking on the empty background, not on an item
     if (e.target.closest('.schedule-item')) return;
     
@@ -56,6 +57,7 @@ export default function Timetable({ date, items, setItems, onExternalDropRef, is
         
         if (navigator.vibrate) navigator.vibrate(50);
         try { target.setPointerCapture(pointerId); } catch(err){}
+        longPressTimerRef.current = null;
       }, 250); // 250ms long press to start creating
     } else {
       setIsDragging(true);
@@ -222,6 +224,19 @@ export default function Timetable({ date, items, setItems, onExternalDropRef, is
     setItems(items.filter(item => item.id !== id));
     deletePage(id).catch(console.error);
   };
+
+  useEffect(() => {
+    const handleTouchMoveNative = (e) => {
+      if (isDragging) {
+        e.preventDefault(); // Prevent native scroll taking over and firing pointercancel
+      }
+    };
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.addEventListener('touchmove', handleTouchMoveNative, { passive: false });
+      return () => container.removeEventListener('touchmove', handleTouchMoveNative);
+    }
+  }, [isDragging]);
 
   const formatTime = (hour) => {
     const h = Math.floor(hour);

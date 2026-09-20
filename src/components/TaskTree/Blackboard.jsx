@@ -35,6 +35,7 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState(null);
+  const pointerStartRef = useRef(null);
   const bgHoldTimerRef = useRef(null);
 
   useEffect(() => {
@@ -119,24 +120,19 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
       const startX = (e.clientX - rect.left - pan.x) / scale;
       const startY = (e.clientY - rect.top - pan.y) / scale;
       
-      if (isMobile) {
-        setIsPanning(true);
-        setPanStart({ clientX: e.clientX, clientY: e.clientY, initialPan: pan });
-        e.target.setPointerCapture(e.pointerId);
+      setIsPanning(true);
+      const startData = { clientX: e.clientX, clientY: e.clientY, initialPan: pan };
+      setPanStart(startData);
+      pointerStartRef.current = startData;
+      e.target.setPointerCapture(e.pointerId);
 
-        bgHoldTimerRef.current = setTimeout(() => {
-          setIsPanning(false);
-          setIsDrawingArea(true);
-          setAreaStart({ x: startX, y: startY });
-          setCurrentArea({ x: startX, y: startY, width: 0, height: 0 });
-          if (navigator.vibrate) navigator.vibrate(50);
-        }, 250);
-      } else {
+      bgHoldTimerRef.current = setTimeout(() => {
+        setIsPanning(false);
         setIsDrawingArea(true);
         setAreaStart({ x: startX, y: startY });
         setCurrentArea({ x: startX, y: startY, width: 0, height: 0 });
-        e.target.setPointerCapture(e.pointerId);
-      }
+        if (navigator.vibrate) navigator.vibrate(50);
+      }, 250);
     }
   };
 
@@ -158,19 +154,19 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
       }
     }
 
-    if (bgHoldTimerRef.current && isPanning) {
-      const dx = Math.abs(e.clientX - panStart.clientX);
-      const dy = Math.abs(e.clientY - panStart.clientY);
-      if (dx > 10 || dy > 10) {
+    if (bgHoldTimerRef.current && pointerStartRef.current) {
+      const dx = Math.abs(e.clientX - pointerStartRef.current.clientX);
+      const dy = Math.abs(e.clientY - pointerStartRef.current.clientY);
+      if (dx > 5 || dy > 5) {
         clearTimeout(bgHoldTimerRef.current);
         bgHoldTimerRef.current = null;
       }
     }
 
-    if (isPanning && !isDrawingArea) {
-      const dx = e.clientX - panStart.clientX;
-      const dy = e.clientY - panStart.clientY;
-      setPan({ x: panStart.initialPan.x + dx, y: panStart.initialPan.y + dy });
+    if (pointerStartRef.current && !isDrawingArea) {
+      const dx = e.clientX - pointerStartRef.current.clientX;
+      const dy = e.clientY - pointerStartRef.current.clientY;
+      setPan({ x: pointerStartRef.current.initialPan.x + dx, y: pointerStartRef.current.initialPan.y + dy });
     } else if (isDrawingArea) {
       const rect = boardRef.current.getBoundingClientRect();
       const currentX = (e.clientX - rect.left - pan.x) / scale;
@@ -228,8 +224,10 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
       bgHoldTimerRef.current = null;
     }
     
-    if (isPanning) {
+    if (pointerStartRef.current) {
       setIsPanning(false);
+      setPanStart(null);
+      pointerStartRef.current = null;
       try { e.target.releasePointerCapture(e.pointerId); } catch(err) {}
     }
 

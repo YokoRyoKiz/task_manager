@@ -26,6 +26,9 @@ async function fetchNotion(endpoint, options = {}) {
     if (taskSchemaCache) {
       detail += `\n\n【Task DB Schema】\n` + JSON.stringify(Object.keys(taskSchemaCache).map(k => `${k} (${taskSchemaCache[k].type})`), null, 2);
     }
+    if (scheduleSchemaCache) {
+      detail += `\n\n【Schedule DB Schema】\n` + JSON.stringify(Object.keys(scheduleSchemaCache).map(k => `${k} (${scheduleSchemaCache[k].type})`), null, 2);
+    }
     if (typeof window !== 'undefined') window.alert("【DB保存エラー】\n" + detail);
     throw new Error(detail);
   }
@@ -80,6 +83,22 @@ function extractTitleFromProps(props) {
   return '名称未設定';
 }
 
+// Notion reserved words that cannot be used as property name keys in the API
+const NOTION_RESERVED_KEYS = new Set(['id', 'object', 'type', 'archived', 'properties', 'parent', 'url', 'created_time', 'last_edited_time']);
+
+/**
+ * Returns the safe key to use for a Notion property in API calls.
+ * If the display name is a reserved word (e.g. "id"), use the internal Notion property ID instead.
+ */
+function safeKey(displayName, schema) {
+  if (!displayName) return displayName;
+  if (NOTION_RESERVED_KEYS.has(displayName) && schema?.[displayName]?.id) {
+    console.warn(`[Notion] Property "${displayName}" is a reserved word — using internal ID "${schema[displayName].id}" instead.`);
+    return schema[displayName].id;
+  }
+  return displayName;
+}
+
 async function buildTaskProperties(data, isCreate = true) {
   const schema = await getTaskSchema();
   const properties = {};
@@ -97,7 +116,7 @@ async function buildTaskProperties(data, isCreate = true) {
   }
 
   if (titleText !== undefined) {
-    const propKey = titlePropName || '名前';
+    const propKey = safeKey(titlePropName || '名前', schema);
     properties[propKey] = {
       title: [{ text: { content: String(titleText || '名称未設定') } }]
     };
@@ -105,61 +124,67 @@ async function buildTaskProperties(data, isCreate = true) {
 
   // 2. Only add other properties if they exist in schema and match expected types
   if (schema) {
+    // Helper: set property using safe key
+    const setProp = (displayName, value) => {
+      const k = safeKey(displayName, schema);
+      if (k) properties[k] = value;
+    };
+
     // Type ('task' | 'area')
     if (data.type !== undefined && schema['type']) {
-      if (schema['type'].type === 'select') properties['type'] = { select: { name: String(data.type) } };
-      else if (schema['type'].type === 'status') properties['type'] = { status: { name: String(data.type) } };
-      else if (schema['type'].type === 'rich_text') properties['type'] = { rich_text: [{ text: { content: String(data.type) } }] };
+      if (schema['type'].type === 'select') setProp('type', { select: { name: String(data.type) } });
+      else if (schema['type'].type === 'status') setProp('type', { status: { name: String(data.type) } });
+      else if (schema['type'].type === 'rich_text') setProp('type', { rich_text: [{ text: { content: String(data.type) } }] });
     } else if (isCreate && schema['type']) {
       const defType = data.type || 'task';
-      if (schema['type'].type === 'select') properties['type'] = { select: { name: defType } };
-      else if (schema['type'].type === 'status') properties['type'] = { status: { name: defType } };
-      else if (schema['type'].type === 'rich_text') properties['type'] = { rich_text: [{ text: { content: defType } }] };
+      if (schema['type'].type === 'select') setProp('type', { select: { name: defType } });
+      else if (schema['type'].type === 'status') setProp('type', { status: { name: defType } });
+      else if (schema['type'].type === 'rich_text') setProp('type', { rich_text: [{ text: { content: defType } }] });
     }
 
     // Progress
     if (data.progress !== undefined && schema['progress']?.type === 'number') {
-      properties['progress'] = { number: Number(data.progress) || 0 };
+      setProp('progress', { number: Number(data.progress) || 0 });
     } else if (isCreate && schema['progress']?.type === 'number') {
-      properties['progress'] = { number: 0 };
+      setProp('progress', { number: 0 });
     }
 
     // x_position
     if (data.x !== undefined && schema['x_position']?.type === 'number') {
-      properties['x_position'] = { number: Math.round(Number(data.x) || 0) };
+      setProp('x_position', { number: Math.round(Number(data.x) || 0) });
     } else if (isCreate && schema['x_position']?.type === 'number') {
-      properties['x_position'] = { number: Math.round(Number(data.x) || 0) };
+      setProp('x_position', { number: Math.round(Number(data.x) || 0) });
     }
 
     // y_position
     if (data.y !== undefined && schema['y_position']?.type === 'number') {
-      properties['y_position'] = { number: Math.round(Number(data.y) || 0) };
+      setProp('y_position', { number: Math.round(Number(data.y) || 0) });
     } else if (isCreate && schema['y_position']?.type === 'number') {
-      properties['y_position'] = { number: Math.round(Number(data.y) || 0) };
+      setProp('y_position', { number: Math.round(Number(data.y) || 0) });
     }
 
     // end_x_position (area)
     if (schema['end_x_position']?.type === 'number') {
       if (data.end_x !== undefined) {
-        properties['end_x_position'] = { number: Math.round(Number(data.end_x) || 0) };
+        setProp('end_x_position', { number: Math.round(Number(data.end_x) || 0) });
       } else if (data.width !== undefined && data.x !== undefined) {
-        properties['end_x_position'] = { number: Math.round((Number(data.x) || 0) + (Number(data.width) || 100)) };
+        setProp('end_x_position', { number: Math.round((Number(data.x) || 0) + (Number(data.width) || 100)) });
       }
     }
 
     // end_y_position (area)
     if (schema['end_y_position']?.type === 'number') {
       if (data.end_y !== undefined) {
-        properties['end_y_position'] = { number: Math.round(Number(data.end_y) || 0) };
+        setProp('end_y_position', { number: Math.round(Number(data.end_y) || 0) });
       } else if (data.height !== undefined && data.y !== undefined) {
-        properties['end_y_position'] = { number: Math.round((Number(data.y) || 0) + (Number(data.height) || 100)) };
+        setProp('end_y_position', { number: Math.round((Number(data.y) || 0) + (Number(data.height) || 100)) });
       }
     }
 
     // Deadline
     if (schema['deadline']?.type === 'date') {
       if (data.deadline !== undefined) {
-        properties['deadline'] = data.deadline ? { date: { start: data.deadline } } : null;
+        setProp('deadline', data.deadline ? { date: { start: data.deadline } } : null);
       }
     }
 
@@ -167,8 +192,8 @@ async function buildTaskProperties(data, isCreate = true) {
     if (schema['color']) {
       const colorVal = data.color || (data.type === 'area' ? 'rgba(255, 255, 255, 0.1)' : 'yellow');
       if (data.color !== undefined || isCreate) {
-        if (schema['color'].type === 'select') properties['color'] = { select: { name: String(colorVal) } };
-        else if (schema['color'].type === 'rich_text') properties['color'] = { rich_text: [{ text: { content: String(colorVal) } }] };
+        if (schema['color'].type === 'select') setProp('color', { select: { name: String(colorVal) } });
+        else if (schema['color'].type === 'rich_text') setProp('color', { rich_text: [{ text: { content: String(colorVal) } }] });
       }
     }
   }
@@ -181,14 +206,44 @@ async function buildScheduleProperties(data, isCreate = true) {
   const properties = {};
   const titleText = data.title !== undefined ? data.title : (isCreate ? '名称未設定' : undefined);
 
+  // Find title property by type
   let titlePropName = null;
+  // Find date property by type
+  let datePropName = null;
+  // Find start/end time number properties
+  let startTimePropName = null;
+  let endTimePropName = null;
+  let numberPropsFound = [];
+
   if (schema) {
+    console.log('[Notion] Schedule DB schema keys:', Object.keys(schema).map(k => `${k} (${schema[k].type})`));
     for (const [key, prop] of Object.entries(schema)) {
       if (prop.type === 'title') {
         titlePropName = key;
-        break;
+      } else if (prop.type === 'date' && !datePropName) {
+        datePropName = key;
+      } else if (prop.type === 'number') {
+        numberPropsFound.push(key);
       }
     }
+    // Try to match start/end time by common names
+    const startCandidates = ['start_time', 'start', '開始', '開始時刻', 'startTime'];
+    const endCandidates = ['end_time', 'end', '終了', '終了時刻', 'endTime'];
+    const dateCandidates = ['target_date', 'date', '日付', '日時', '実施日'];
+
+    for (const k of startCandidates) {
+      if (schema[k]?.type === 'number') { startTimePropName = k; break; }
+    }
+    for (const k of endCandidates) {
+      if (schema[k]?.type === 'number') { endTimePropName = k; break; }
+    }
+    for (const k of dateCandidates) {
+      if (schema[k]?.type === 'date') { datePropName = k; break; }
+    }
+
+    // Fallback: assign by position if specific names not found
+    if (!startTimePropName && numberPropsFound.length >= 1) startTimePropName = numberPropsFound[0];
+    if (!endTimePropName && numberPropsFound.length >= 2) endTimePropName = numberPropsFound[1];
   }
 
   if (titleText !== undefined) {
@@ -199,17 +254,18 @@ async function buildScheduleProperties(data, isCreate = true) {
   }
 
   if (schema) {
-    if (data.date !== undefined && schema['target_date']?.type === 'date') {
-      properties['target_date'] = { date: { start: data.date.split('T')[0] } };
+    if (data.date !== undefined && datePropName) {
+      properties[datePropName] = { date: { start: data.date.split('T')[0] } };
     }
-    if (data.startHour !== undefined && schema['start_time']?.type === 'number') {
-      properties['start_time'] = { number: Number(data.startHour) || 0 };
+    if (data.startHour !== undefined && startTimePropName) {
+      properties[startTimePropName] = { number: Number(data.startHour) || 0 };
     }
-    if (data.endHour !== undefined && schema['end_time']?.type === 'number') {
-      properties['end_time'] = { number: Number(data.endHour) || 1 };
+    if (data.endHour !== undefined && endTimePropName) {
+      properties[endTimePropName] = { number: Number(data.endHour) || 1 };
     }
   }
 
+  console.log('[Notion] buildScheduleProperties result:', JSON.stringify(properties));
   return properties;
 }
 
@@ -361,13 +417,44 @@ export async function fetchSchedules() {
     }
   }
 
+  if (scheduleSchemaCache) {
+    console.log('[Notion] Schedule schema loaded:', Object.keys(scheduleSchemaCache).map(k => `${k} (${scheduleSchemaCache[k].type})`));
+  }
+
+  // Dynamically find property names by type/common names
+  let datePropName = null;
+  let startTimePropName = null;
+  let endTimePropName = null;
+  if (scheduleSchemaCache) {
+    const dateCandidates = ['target_date', 'date', '日付', '日時', '実施日'];
+    const startCandidates = ['start_time', 'start', '開始', '開始時刻', 'startTime'];
+    const endCandidates = ['end_time', 'end', '終了', '終了時刻', 'endTime'];
+    const numberProps = Object.keys(scheduleSchemaCache).filter(k => scheduleSchemaCache[k].type === 'number');
+
+    for (const k of dateCandidates) {
+      if (scheduleSchemaCache[k]?.type === 'date') { datePropName = k; break; }
+    }
+    if (!datePropName) {
+      datePropName = Object.keys(scheduleSchemaCache).find(k => scheduleSchemaCache[k].type === 'date') || null;
+    }
+    for (const k of startCandidates) {
+      if (scheduleSchemaCache[k]?.type === 'number') { startTimePropName = k; break; }
+    }
+    for (const k of endCandidates) {
+      if (scheduleSchemaCache[k]?.type === 'number') { endTimePropName = k; break; }
+    }
+    if (!startTimePropName && numberProps.length >= 1) startTimePropName = numberProps[0];
+    if (!endTimePropName && numberProps.length >= 2) endTimePropName = numberProps[1];
+  }
+
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
   const schedules = [];
   for (const page of data.results) {
     const props = page.properties;
-    const dateStr = props.target_date?.date?.start;
+    // Dynamically get date string from found property name
+    const dateStr = datePropName ? props[datePropName]?.date?.start : null;
     
     if (dateStr) {
       const targetDate = new Date(dateStr);
@@ -388,8 +475,8 @@ export async function fetchSchedules() {
       id: page.id,
       title: title,
       date: dateStr || new Date().toISOString().split('T')[0],
-      startHour: props.start_time?.number || 0,
-      endHour: props.end_time?.number || 1,
+      startHour: (startTimePropName ? props[startTimePropName]?.number : null) ?? 0,
+      endHour: (endTimePropName ? props[endTimePropName]?.number : null) ?? 1,
       color: 'blue'
     });
   }

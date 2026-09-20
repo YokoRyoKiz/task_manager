@@ -84,8 +84,7 @@ export async function createTask(task) {
     body: JSON.stringify({
       parent: { database_id: TASK_DB_ID },
       properties: {
-        "title": { title: [{ text: { content: task.id || 'task' } }] },
-        "%60mnP": { rich_text: [{ text: { content: task.title } }] },
+        "title": { rich_text: [{ text: { content: task.title } }] },
         type: { select: { name: 'task' } },
         progress: { number: task.progress || 0 },
         x_position: { number: task.x },
@@ -100,7 +99,7 @@ export async function createTask(task) {
 
 export async function updateTask(taskId, updates) {
   const properties = {};
-  if (updates.title !== undefined) properties["%60mnP"] = { rich_text: [{ text: { content: updates.title } }] };
+  if (updates.title !== undefined) properties["title"] = { rich_text: [{ text: { content: updates.title } }] };
   if (updates.progress !== undefined) properties.progress = { number: updates.progress };
   if (updates.x !== undefined) properties.x_position = { number: updates.x };
   if (updates.y !== undefined) properties.y_position = { number: updates.y };
@@ -119,8 +118,7 @@ export async function createArea(area) {
     body: JSON.stringify({
       parent: { database_id: TASK_DB_ID },
       properties: {
-        "title": { title: [{ text: { content: area.id || 'area' } }] },
-        "%60mnP": { rich_text: [{ text: { content: area.name } }] },
+        "title": { rich_text: [{ text: { content: area.name } }] },
         type: { select: { name: 'area' } },
         x_position: { number: area.x },
         y_position: { number: area.y },
@@ -135,7 +133,7 @@ export async function createArea(area) {
 
 export async function updateArea(areaId, updates) {
   const properties = {};
-  if (updates.name !== undefined) properties["%60mnP"] = { rich_text: [{ text: { content: updates.name } }] };
+  if (updates.name !== undefined) properties["title"] = { rich_text: [{ text: { content: updates.name } }] };
   if (updates.x !== undefined) properties.x_position = { number: updates.x };
   if (updates.y !== undefined) properties.y_position = { number: updates.y };
   if (updates.end_x !== undefined) properties.end_x_position = { number: updates.end_x };
@@ -203,8 +201,7 @@ export async function createSchedule(item) {
     body: JSON.stringify({
       parent: { database_id: SCHEDULE_DB_ID },
       properties: {
-        "title": { title: [{ text: { content: item.id || 'schedule' } }] },
-        "uO_J": { rich_text: [{ text: { content: item.title } }] },
+        "title": { rich_text: [{ text: { content: item.title } }] },
         target_date: { date: { start: item.date.split('T')[0] } },
         start_time: { number: item.startHour },
         end_time: { number: item.endHour }
@@ -216,7 +213,7 @@ export async function createSchedule(item) {
 
 export async function updateSchedule(scheduleId, updates) {
   const properties = {};
-  if (updates.title !== undefined) properties["uO_J"] = { rich_text: [{ text: { content: updates.title } }] };
+  if (updates.title !== undefined) properties["title"] = { rich_text: [{ text: { content: updates.title } }] };
   if (updates.date !== undefined) properties.target_date = { date: { start: updates.date.split('T')[0] } };
   if (updates.startHour !== undefined) properties.start_time = { number: updates.startHour };
   if (updates.endHour !== undefined) properties.end_time = { number: updates.endHour };

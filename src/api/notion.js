@@ -211,13 +211,16 @@ async function buildTaskProperties(data, isCreate = true) {
   }
 
   if (schema && taskProps) {
-    // Type (task | area)
+    // Type (task | area) — typeKey がスキーマに実在する場合のみ送信
     const typeVal = data.type ?? (isCreate ? 'task' : undefined);
-    if (typeVal !== undefined && taskProps.typeKey) {
+    if (typeVal !== undefined && taskProps.typeKey && schema[taskProps.typeKey]) {
       const propType = schema[taskProps.typeKey]?.type;
-      if (propType === 'select')    setProp(taskProps.typeKey, { select: { name: String(typeVal) } });
+      if (propType === 'select')         setProp(taskProps.typeKey, { select: { name: String(typeVal) } });
       else if (propType === 'status')    setProp(taskProps.typeKey, { status: { name: String(typeVal) } });
       else if (propType === 'rich_text') setProp(taskProps.typeKey, { rich_text: [{ text: { content: String(typeVal) } }] });
+      else console.warn('[Notion] typeKey prop type unknown:', propType, '→ skip');
+    } else if (typeVal !== undefined && taskProps.typeKey && !schema[taskProps.typeKey]) {
+      console.warn('[Notion] typeKey "' + taskProps.typeKey + '" not found in schema → skip');
     }
 
     // Progress
@@ -250,9 +253,9 @@ async function buildTaskProperties(data, isCreate = true) {
         setProp(taskProps.endY, { number: Math.round((Number(data.y) || 0) + (Number(data.height) || 100)) });
     }
 
-    // Deadline
+    // Deadline — null クリア時は { date: null } を送る（null 直値は API エラー）
     if (taskProps.deadline && data.deadline !== undefined) {
-      setProp(taskProps.deadline, data.deadline ? { date: { start: data.deadline } } : null);
+      setProp(taskProps.deadline, data.deadline ? { date: { start: data.deadline } } : { date: null });
     }
 
     // Color

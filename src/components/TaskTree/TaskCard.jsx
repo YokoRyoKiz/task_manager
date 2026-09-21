@@ -1,7 +1,7 @@
 import React from 'react';
 import { Network, Trash2, Calendar } from 'lucide-react';
 
-export default function TaskCard({ task, isInteracting, isHeld, onPointerDown, onSplitClick, onDelete }) {
+export default function TaskCard({ task, isInteracting, isHeld, onPointerDown, onPointerMove, onPointerUp, onSplitClick, onDelete }) {
   return (
     <div 
       className="glass-panel"
@@ -12,7 +12,7 @@ export default function TaskCard({ task, isInteracting, isHeld, onPointerDown, o
         width: '200px',
         minHeight: '100px',
         padding: '1rem',
-        cursor: 'grab',
+        cursor: isHeld ? 'grabbing' : 'grab',
         background: `var(--sticky-${task.color || 'yellow'})`,
         color: '#1e293b',
         boxShadow: isHeld ? 'var(--shadow-xl)' : 'var(--shadow-md)',
@@ -24,14 +24,26 @@ export default function TaskCard({ task, isInteracting, isHeld, onPointerDown, o
         WebkitUserSelect: 'none',
         WebkitTouchCallout: 'none',
         transform: isHeld ? 'scale(1.05)' : 'scale(1)',
-        transition: 'transform 0.2s, box-shadow 0.2s',
+        transition: isHeld ? 'transform 0.1s, box-shadow 0.1s' : 'transform 0.2s, box-shadow 0.2s',
         opacity: isHeld ? 0.95 : 1
       }}
       onPointerDown={(e) => {
         if (e.target.closest('button')) return;
         e.stopPropagation();
+        // ポインターキャプチャを先に取得 → move/up をこのdivで受け取る
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
         onPointerDown(e, task);
-        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (e.target.closest('button')) return;
+        onPointerMove?.(e, task);
+      }}
+      onPointerUp={(e) => {
+        if (e.target.closest('button')) return;
+        onPointerUp?.(e, task);
+      }}
+      onPointerCancel={(e) => {
+        onPointerUp?.(e, task);
       }}
     >
       <div style={{ flex: 1, fontWeight: 600, marginBottom: '0.5rem', wordBreak: 'break-word' }}>
@@ -89,3 +101,4 @@ export default function TaskCard({ task, isInteracting, isHeld, onPointerDown, o
     </div>
   );
 }
+

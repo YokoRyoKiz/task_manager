@@ -139,23 +139,6 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
   };
 
   const handlePointerMove = (e) => {
-    if (pendingTask) {
-      // Check if user moved too far before hold triggered
-      const rect = boardRef.current.getBoundingClientRect();
-      const currentX = (e.clientX - rect.left - pan.x) / scale;
-      const currentY = (e.clientY - rect.top - pan.y) / scale;
-      const dx = currentX - pendingTask.startX;
-      const dy = currentY - pendingTask.startY;
-      if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
-        if (holdTimerRef.current) {
-          clearTimeout(holdTimerRef.current);
-          holdTimerRef.current = null;
-        }
-        setPendingTask(null);
-        try { e.target.releasePointerCapture(e.pointerId); } catch(err) {}
-      }
-    }
-
     if (bgHoldTimerRef.current && pointerStartRef.current) {
       const dx = Math.abs(e.clientX - pointerStartRef.current.clientX);
       const dy = Math.abs(e.clientY - pointerStartRef.current.clientY);
@@ -208,15 +191,6 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
           return a;
         }));
       }
-    } else if (interactingTask) {
-      const rect = boardRef.current.getBoundingClientRect();
-      const currentX = (e.clientX - rect.left - pan.x) / scale;
-      const currentY = (e.clientY - rect.top - pan.y) / scale;
-      
-      const dx = currentX - interactingTask.startX;
-      const dy = currentY - interactingTask.startY;
-      
-      setTasks(prev => prev.map(t => t.id === interactingTask.id ? { ...t, x: interactingTask.origX + dx, y: interactingTask.origY + dy } : t));
     }
   };
 
@@ -230,15 +204,6 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
       setIsPanning(false);
       setPanStart(null);
       pointerStartRef.current = null;
-      try { e.target.releasePointerCapture(e.pointerId); } catch(err) {}
-    }
-
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-    if (pendingTask) {
-      setPendingTask(null);
       try { e.target.releasePointerCapture(e.pointerId); } catch(err) {}
     }
 
@@ -281,16 +246,6 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
       }
       setInteractingArea(null);
       try { e.target.releasePointerCapture(e.pointerId); } catch (err) {}
-    } else if (interactingTask) {
-      setTasks(prevTasks => {
-        const updatedTask = prevTasks.find(t => t.id === interactingTask.id);
-        if (updatedTask) {
-          updateTask(updatedTask.id, { x: updatedTask.x, y: updatedTask.y }).catch(err => console.error(err));
-        }
-        return prevTasks;
-      });
-      setInteractingTask(null);
-      try { e.target.releasePointerCapture(e.pointerId); } catch (err) {}
     }
   };
 
@@ -319,8 +274,13 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
     }
   };
 
+  // interactingTask/pendingTask の最新値を ref でも保持（クロージャ問題回避）
+  const interactingTaskRef = useRef(null);
+  const pendingTaskRef = useRef(null);
+
   const handleTaskPointerDown = (e, task) => {
     if (!e.isPrimary) return;
+    e.stopPropagation(); // ボードの handlePointerDown を発火させない
     const rect = boardRef.current.getBoundingClientRect();
     const interactionData = {
       id: task.id,
@@ -329,14 +289,73 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
       origX: task.x,
       origY: task.y
     };
-    
+    pendingTaskRef.current = interactionData;
     setPendingTask(interactionData);
-    
+
     holdTimerRef.current = setTimeout(() => {
-      setInteractingTask(interactionData);
-      setPendingTask(null);
+      if (pendingTaskRef.current?.id === interactionData.id) {
+        interactingTaskRef.current = interactionData;
+        setInteractingTask(interactionData);
+        pendingTaskRef.current = null;
+        setPendingTask(null);
+        if (navigator.vibrate) navigator.vibrate(40);
+      }
       holdTimerRef.current = null;
-    }, 250); // 250ms long press required
+    }, 250);
+  };
+
+  const handleTaskPointerMove = (e, task) => {
+    if (!e.isPrimary) return;
+
+    // 長押し待機中：動きすぎたらキャンセル
+    if (pendingTaskRef.current?.id === task.id) {
+      const rect = boardRef.current.getBoundingClientRect();
+      const currentX = (e.clientX - rect.left - pan.x) / scale;
+      const currentY = (e.clientY - rect.top - pan.y) / scale;
+      const dx = currentX - pendingTaskRef.current.startX;
+      const dy = currentY - pendingTaskRef.current.startY;
+      if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
+        if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
+        pendingTaskRef.current = null;
+        setPendingTask(null);
+        try { e.target.releasePointerCapture(e.pointerId); } catch (_) {}
+      }
+      return;
+    }
+
+    // ドラッグ中：タスク位置を更新
+    if (interactingTaskRef.current?.id === task.id) {
+      const rect = boardRef.current.getBoundingClientRect();
+      const currentX = (e.clientX - rect.left - pan.x) / scale;
+      const currentY = (e.clientY - rect.top - pan.y) / scale;
+      const dx = currentX - interactingTaskRef.current.startX;
+      const dy = currentY - interactingTaskRef.current.startY;
+      setTasks(prev => prev.map(t =>
+        t.id === task.id
+          ? { ...t, x: interactingTaskRef.current.origX + dx, y: interactingTaskRef.current.origY + dy }
+          : t
+      ));
+    }
+  };
+
+  const handleTaskPointerUp = (e, task) => {
+    if (!e.isPrimary) return;
+    if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
+    pendingTaskRef.current = null;
+    setPendingTask(null);
+
+    if (interactingTaskRef.current?.id === task.id) {
+      setTasks(prevTasks => {
+        const updatedTask = prevTasks.find(t => t.id === task.id);
+        if (updatedTask) {
+          updateTask(updatedTask.id, { x: updatedTask.x, y: updatedTask.y }).catch(err => console.error(err));
+        }
+        return prevTasks;
+      });
+      interactingTaskRef.current = null;
+      setInteractingTask(null);
+    }
+    try { e.target.releasePointerCapture(e.pointerId); } catch (_) {}
   };
 
   const handleAddTaskConfirm = async (title, deadline) => {
@@ -647,6 +666,8 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
               isInteracting={interactingTask?.id === task.id || pendingTask?.id === task.id}
               isHeld={interactingTask?.id === task.id}
               onPointerDown={handleTaskPointerDown}
+              onPointerMove={handleTaskPointerMove}
+              onPointerUp={handleTaskPointerUp}
               onSplitClick={(t) => setSplitTask(t)}
               onDelete={handleDeleteTask}
             />

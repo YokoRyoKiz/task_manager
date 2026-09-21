@@ -293,9 +293,11 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
     setPendingTask(interactionData);
 
     holdTimerRef.current = setTimeout(() => {
-      if (pendingTaskRef.current?.id === interactionData.id) {
-        interactingTaskRef.current = interactionData;
-        setInteractingTask(interactionData);
+      const pending = pendingTaskRef.current;
+      if (pending?.id === interactionData.id) {
+        // 長押し確定時点の最新指位置を起点としてドラッグ開始
+        interactingTaskRef.current = pending;
+        setInteractingTask(pending);
         pendingTaskRef.current = null;
         setPendingTask(null);
         if (navigator.vibrate) navigator.vibrate(40);
@@ -307,20 +309,19 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
   const handleTaskPointerMove = (e, task) => {
     if (!e.isPrimary) return;
 
-    // 長押し待機中：動きすぎたらキャンセル
+    // 長押し待機中：指位置を追跡（キャンセルはしない）
     if (pendingTaskRef.current?.id === task.id) {
       const rect = boardRef.current.getBoundingClientRect();
       const currentX = (e.clientX - rect.left - pan.x) / scale;
       const currentY = (e.clientY - rect.top - pan.y) / scale;
-      const dx = currentX - pendingTaskRef.current.startX;
-      const dy = currentY - pendingTaskRef.current.startY;
-      if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
-        if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
-        pendingTaskRef.current = null;
-        setPendingTask(null);
-        try { e.target.releasePointerCapture(e.pointerId); } catch (_) {}
-      }
-      return;
+      // 最新の指位置を startX/Y として更新 → タイマー確定時にここから動き始める
+      pendingTaskRef.current = {
+        ...pendingTaskRef.current,
+        startX: currentX,
+        startY: currentY,
+        origX: task.x,
+        origY: task.y,
+      };
     }
 
     // ドラッグ中：タスク位置を更新

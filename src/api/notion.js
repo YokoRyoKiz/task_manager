@@ -97,10 +97,18 @@ function safeKey(displayName, schema) {
  * filtered by the expected type.
  */
 function findProp(schema, expectedType, ...candidates) {
+  // excludeKeys: 除外するプロパティ名のSet（最後の引数がSetの場合）
+  let excludeKeys = null;
+  if (candidates.length > 0 && candidates[candidates.length - 1] instanceof Set) {
+    excludeKeys = candidates.pop();
+  }
+  const skip = (key) => excludeKeys?.has(key);
+
   // 1. Try exact candidate names
   for (const c of candidates) {
     const lower = c.toLowerCase();
     for (const [key, prop] of Object.entries(schema)) {
+      if (skip(key)) continue;
       if (prop.type === expectedType && key.toLowerCase() === lower) return key;
     }
   }
@@ -108,32 +116,39 @@ function findProp(schema, expectedType, ...candidates) {
   for (const c of candidates) {
     const lower = c.toLowerCase();
     for (const [key, prop] of Object.entries(schema)) {
+      if (skip(key)) continue;
       if (prop.type === expectedType && key.toLowerCase().includes(lower)) return key;
     }
   }
-  // 3. Fallback: first property of the expected type
-  for (const [key, prop] of Object.entries(schema)) {
-    if (prop.type === expectedType) return key;
+  // 3. Fallback: first property of the expected type (candidates指定時はスキップ)
+  if (candidates.length === 0) {
+    for (const [key, prop] of Object.entries(schema)) {
+      if (skip(key)) continue;
+      if (prop.type === expectedType) return key;
+    }
   }
   return null;
 }
 
 function resolveTaskProps(schema) {
   const title     = findProp(schema, 'title');
+  // title型プロパティは他の用途に誤解決しないよう除外
+  const titleExclude = title ? new Set([title]) : new Set();
   // 実際の表示名（rich_text）—「タイトル」や「名前」など
-  const nameField = findProp(schema, 'rich_text', 'タイトル', '名前', '名称', 'name', 'Name', 'title_text');
-  // 種別/タイプ (select or status or rich_text)
-  const typeKey   = findProp(schema, 'select',    'タイプ', 'type', '種別', '区分', '区別')
-                 || findProp(schema, 'status',    'タイプ', 'type', '種別', '区分', '区別')
-                 || findProp(schema, 'rich_text', 'タイプ', 'type', '種別', '区分', '区別');
-  const progress  = findProp(schema, 'number',    '進捗', 'progress', '進捗率');
-  const x         = findProp(schema, 'number',    'x座標', 'x_position', 'x位置', 'x');
-  const y         = findProp(schema, 'number',    'y座標', 'y_position', 'y位置', 'y');
-  const endX      = findProp(schema, 'number',    'x終点', 'end_x_position', '終点x', 'end_x');
-  const endY      = findProp(schema, 'number',    'y終点', 'end_y_position', '終点y', 'end_y');
-  const deadline  = findProp(schema, 'date',      '締め切り', 'deadline', '期限', '〆切', '最終期限');
-  const color     = findProp(schema, 'select',    '色', 'color')
-                 || findProp(schema, 'rich_text', '色', 'color');
+  const nameField = findProp(schema, 'rich_text', 'タイトル', '名前', '名称', 'name', 'Name', 'title_text', titleExclude);
+  // 種別/タイプ (select or status or rich_text) — title型は除外
+  const typeKey   = findProp(schema, 'select',    'タイプ', 'type', '種別', '区分', '区別', titleExclude)
+                 || findProp(schema, 'status',    'タイプ', 'type', '種別', '区分', '区別', titleExclude)
+                 || findProp(schema, 'rich_text', 'タイプ', 'type', '種別', '区分', '区別', titleExclude);
+  const progress  = findProp(schema, 'number',    '進捗', 'progress', '進捗率', titleExclude);
+  const x         = findProp(schema, 'number',    'x座標', 'x_position', 'x位置', 'x', titleExclude);
+  const y         = findProp(schema, 'number',    'y座標', 'y_position', 'y位置', 'y', titleExclude);
+  const endX      = findProp(schema, 'number',    'x終点', 'end_x_position', '終点x', 'end_x', titleExclude);
+  const endY      = findProp(schema, 'number',    'y終点', 'end_y_position', '終点y', 'end_y', titleExclude);
+  const deadline  = findProp(schema, 'date',      '締め切り', 'deadline', '期限', '〆切', '最終期限', titleExclude);
+  const color     = findProp(schema, 'select',    '色', 'color', titleExclude)
+                 || findProp(schema, 'rich_text', '色', 'color', titleExclude);
+  console.log('[Notion] resolveTaskProps → title:', title, '/ typeKey:', typeKey, '/ nameField:', nameField);
   return { title, nameField, typeKey, progress, x, y, endX, endY, deadline, color };
 }
 

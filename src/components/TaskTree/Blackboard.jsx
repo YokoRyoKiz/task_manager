@@ -4,10 +4,12 @@ import SplitModal from './SplitModal';
 import AddTaskModal from './AddTaskModal';
 import AddAreaModal from './AddAreaModal';
 import { createTask, updateTask, deletePage, createArea, updateArea } from '../../api/notion';
+import { useAuth } from '../../context/AuthContext';
 import { v4 as uuidv4 } from 'uuid';
 import { Plus, List, ChevronRight, X, Trash2 } from 'lucide-react';
 
 export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
+  const { currentUser } = useAuth();
   const [pan, setPan] = useState({ 
     x: typeof window !== 'undefined' ? window.innerWidth / 2 : 0, 
     y: typeof window !== 'undefined' ? window.innerHeight / 2 : 0 
@@ -373,7 +375,7 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
     setIsAddingTask(false);
 
     try {
-      const realId = await createTask(newTask);
+      const realId = await createTask(newTask, currentUser?.id || null);
       setTasks(prev => prev.map(t => t.id === tempId ? { ...t, id: realId } : t));
     } catch (err) {
       console.error(err);
@@ -383,6 +385,11 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
   const handleDeleteTask = (id) => {
     setTasks(tasks.filter(t => t.id !== id));
     deletePage(id).catch(err => console.error(err));
+  };
+
+  const handleRenameTask = (id, newTitle) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
+    updateTask(id, { title: newTitle, name: newTitle }).catch(err => console.error(err));
   };
 
   const handleSplitConfirm = async (parentTask, newSubtasks) => {
@@ -671,6 +678,7 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
               onPointerUp={handleTaskPointerUp}
               onSplitClick={(t) => setSplitTask(t)}
               onDelete={handleDeleteTask}
+              onRename={handleRenameTask}
             />
           ))}
         </div>

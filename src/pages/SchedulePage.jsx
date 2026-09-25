@@ -3,9 +3,11 @@ import TimelineSlider from '../components/Schedule/TimelineSlider';
 import Timetable from '../components/Schedule/Timetable';
 import ScheduleTaskbar from '../components/Schedule/ScheduleTaskbar';
 import { fetchSchedules, fetchTaskTree } from '../api/notion';
+import { useAuth } from '../context/AuthContext';
 import { List } from 'lucide-react';
 
 export default function SchedulePage() {
+  const { currentUser } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
@@ -19,7 +21,7 @@ export default function SchedulePage() {
   const onExternalDropRef = useRef(null);
 
   useEffect(() => {
-    Promise.all([fetchSchedules(), fetchTaskTree()])
+    Promise.all([fetchSchedules(currentUser?.id || null), fetchTaskTree(currentUser?.id || null)])
       .then(([schedulesData, taskData]) => {
         setItems(schedulesData);
         setTasks(taskData.tasks);

@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/notion-api/, ''),
           configure: (proxy, options) => {
             proxy.on('proxyReq', (proxyReq, req, res) => {
-              proxyReq.setHeader('Authorization', `Bearer ${env.NOTION_API_KEY}`);
+              proxyReq.setHeader('Authorization', `Bearer ${env.NOTION_API_KEY ? env.NOTION_API_KEY.trim() : ''}`);
               proxyReq.setHeader('Notion-Version', '2022-06-28');
             });
           }

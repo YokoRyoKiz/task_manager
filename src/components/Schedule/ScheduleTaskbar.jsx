@@ -48,7 +48,7 @@ export default function ScheduleTaskbar({ isOpen, onClose, tasks, onTaskDragStar
       }}
     >
       <h3 style={{ marginBottom: isMobile ? '0.5rem' : '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 'bold' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><List size={isMobile ? 16 : 20} /> タスク一覧</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: isMobile ? '0.7rem' : '0.85rem' }}><List size={isMobile ? 13 : 16} /> タスク一覧</span>
         {!isMobile && (
           <button 
             className="btn-icon" 

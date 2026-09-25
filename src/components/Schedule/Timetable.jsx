@@ -3,8 +3,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { Trash2 } from 'lucide-react';
 import AddScheduleModal from './AddScheduleModal';
 import { createSchedule, deletePage, updateSchedule } from '../../api/notion';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Timetable({ date, items, setItems, onExternalDropRef, isMobile = false }) {
+  const { currentUser } = useAuth();
   const [scale, setScale] = useState(1);
   const hourHeight = 60 * scale;
   const hours = Array.from({ length: 24 }).map((_, i) => i);
@@ -176,7 +178,7 @@ export default function Timetable({ date, items, setItems, onExternalDropRef, is
     setItems(prev => [...prev, newItem]);
     
     try {
-      const realId = await createSchedule(newItem);
+      const realId = await createSchedule(newItem, currentUser?.id || null);
       setItems(prev => prev.map(t => t.id === tempId ? { ...t, id: realId } : t));
     } catch (err) {
       console.error('Error creating schedule in Notion:', err);
@@ -205,7 +207,7 @@ export default function Timetable({ date, items, setItems, onExternalDropRef, is
       setItems([...items, newItem]);
       
       try {
-        const realId = await createSchedule(newItem);
+        const realId = await createSchedule(newItem, currentUser?.id || null);
         setItems(prev => prev.map(t => t.id === tempId ? { ...t, id: realId } : t));
       } catch (err) {
         console.error('Failed to create schedule in Notion', err);

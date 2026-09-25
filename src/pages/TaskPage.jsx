@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import Blackboard from '../components/TaskTree/Blackboard';
 import { fetchTaskTree } from '../api/notion';
+import { useAuth } from '../context/AuthContext';
 
 export default function TaskPage() {
+  const { currentUser } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchTaskTree()
+    fetchTaskTree(currentUser?.id || null)
       .then(data => {
         setTasks(data.tasks);
         setAreas(data.areas);

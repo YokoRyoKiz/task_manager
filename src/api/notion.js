@@ -3,13 +3,16 @@ const NOTION_PROXY = '/notion-api/v1';
 // IDs
 const TASK_DB_ID = '32ac2487-daa9-8081-872a-e19285e2a862';
 const SCHEDULE_DB_ID = '3dec2487-daa9-8083-86dd-c94a7fa578c4';
+const PERSON_DB_ID = '3e6c2487-daa9-8052-aa9f-d0874b35513f';
 
 let taskSchemaCache = null;
 let scheduleSchemaCache = null;
+let personSchemaCache = null;
 
 // Resolved property name maps (populated after schema load)
-let taskProps = null;    // { title, type, progress, x, y, endX, endY, deadline, color }
-let scheduleProps = null; // { title, date, startTime, endTime }
+let taskProps = null;    // { title, type, progress, x, y, endX, endY, deadline, color, person }
+let scheduleProps = null; // { title, date, startTime, endTime, person }
+let personProps = null;  // { title (id field), name }
 
 // ─── HTTP helper ────────────────────────────────────────────────────────────
 
@@ -68,6 +71,21 @@ async function getScheduleSchema() {
     console.warn('Failed to fetch schedule DB schema:', e);
   }
   return scheduleSchemaCache;
+}
+
+async function getPersonSchema() {
+  if (personSchemaCache) return personSchemaCache;
+  try {
+    const db = await fetchNotion(`/databases/${PERSON_DB_ID}`);
+    if (db?.properties) {
+      personSchemaCache = db.properties;
+      personProps = resolvePersonProps(personSchemaCache);
+      console.log('[Notion] Person DB props resolved:', personProps);
+    }
+  } catch (e) {
+    console.warn('Failed to fetch person DB schema:', e);
+  }
+  return personSchemaCache;
 }
 
 // ─── Schema resolution: タイプでプロパティ名を自動解決 ──────────────────────
@@ -148,8 +166,10 @@ function resolveTaskProps(schema) {
   const deadline  = findProp(schema, 'date',      '締め切り', 'deadline', '期限', '〆切', '最終期限', titleExclude);
   const color     = findProp(schema, 'select',    '色', 'color', titleExclude)
                  || findProp(schema, 'rich_text', '色', 'color', titleExclude);
+  const person    = findProp(schema, 'rich_text', '人', 'person', 'ユーザー', 'user', titleExclude)
+                 || findProp(schema, 'select',    '人', 'person', 'ユーザー', 'user', titleExclude);
   console.log('[Notion] resolveTaskProps → title:', title, '/ typeKey:', typeKey, '/ nameField:', nameField);
-  return { title, nameField, typeKey, progress, x, y, endX, endY, deadline, color };
+  return { title, nameField, typeKey, progress, x, y, endX, endY, deadline, color, person };
 }
 
 function resolveScheduleProps(schema) {
@@ -162,7 +182,15 @@ function resolveScheduleProps(schema) {
   // If start/end not found by name, use 1st/2nd number prop
   const st = startTime || findNthNumberProp(schema, 0, endTime);
   const et = endTime   || findNthNumberProp(schema, 1, startTime);
-  return { title, nameField, date, startTime: st, endTime: et };
+  const person = findProp(schema, 'rich_text', '人', 'person', 'ユーザー', 'user')
+              || findProp(schema, 'select',    '人', 'person', 'ユーザー', 'user');
+  return { title, nameField, date, startTime: st, endTime: et, person };
+}
+
+function resolvePersonProps(schema) {
+  const title = findProp(schema, 'title'); // This is the 'id' column (primary)
+  const name  = findProp(schema, 'rich_text', '名前', 'name', '氏名');
+  return { title, name };
 }
 
 // ─── Title extraction from page properties ───────────────────────────────────
@@ -308,12 +336,14 @@ async function buildScheduleProperties(data, isCreate = true) {
 
 // ─── fetchTaskTree ────────────────────────────────────────────────────────────
 
-export async function fetchTaskTree() {
+export async function fetchTaskTree(personId = null) {
   const schema = await getTaskSchema();
 
+  const queryBody = { page_size: 100 };
+  // personId フィルタは取得後にクライアント側でフィルタする（スキーマ解決後）
   const data = await fetchNotion(`/databases/${TASK_DB_ID}/query`, {
     method: 'POST',
-    body: JSON.stringify({ page_size: 100 }),
+    body: JSON.stringify(queryBody),
   });
 
   // Build schema from query results if DB fetch failed
@@ -339,6 +369,14 @@ export async function fetchTaskTree() {
 
   for (const page of data.results) {
     const props = page.properties;
+
+    // ── 人フィルタ ────────────────────────────────────────────────────────
+    if (personId && tp.person) {
+      const pagePersonId = props[tp.person]?.rich_text?.[0]?.plain_text
+                        || props[tp.person]?.select?.name
+                        || null;
+      if (pagePersonId !== personId) continue;
+    }
 
     // ── Type determination ──────────────────────────────────────────────────
     // typeKey が見つかっていればそのプロパティの値、なければ 'task' をデフォルトに
@@ -398,8 +436,18 @@ export async function fetchTaskTree() {
 
 // ─── CRUD operations ──────────────────────────────────────────────────────────
 
-export async function createTask(task) {
+export async function createTask(task, personId = null) {
   const properties = await buildTaskProperties({ ...task, type: 'task' }, true);
+  // 人フィールドを設定
+  if (personId && taskProps?.person) {
+    const schema = await getTaskSchema();
+    const k = safeKey(taskProps.person, schema);
+    if (k) {
+      const propType = schema[taskProps.person]?.type;
+      if (propType === 'rich_text') properties[k] = { rich_text: [{ text: { content: personId } }] };
+      else if (propType === 'select') properties[k] = { select: { name: personId } };
+    }
+  }
   const data = await fetchNotion(`/pages`, {
     method: 'POST',
     body: JSON.stringify({ parent: { database_id: TASK_DB_ID }, properties }),
@@ -451,7 +499,7 @@ export async function deletePage(pageId) {
 
 // ─── Schedule operations ──────────────────────────────────────────────────────
 
-export async function fetchSchedules() {
+export async function fetchSchedules(personId = null) {
   const schema = await getScheduleSchema();
 
   const data = await fetchNotion(`/databases/${SCHEDULE_DB_ID}/query`, {
@@ -492,6 +540,14 @@ export async function fetchSchedules() {
       }
     }
 
+    // 人フィルタ
+    if (personId && sp.person) {
+      const pagePersonId = props[sp.person]?.rich_text?.[0]?.plain_text
+                        || props[sp.person]?.select?.name
+                        || null;
+      if (pagePersonId !== personId) continue;
+    }
+
     const title = extractTitleFromProps(props);
 
     schedules.push({
@@ -501,13 +557,29 @@ export async function fetchSchedules() {
       startHour: (sp.startTime ? props[sp.startTime]?.number : null) ?? 0,
       endHour:   (sp.endTime   ? props[sp.endTime]?.number   : null) ?? 1,
       color:     'blue',
+      personId:  sp.person ? (props[sp.person]?.rich_text?.[0]?.plain_text || props[sp.person]?.select?.name || null) : null,
     });
   }
   return schedules;
 }
 
-export async function createSchedule(item) {
+// 全スケジュールを人別に取得（モニター用）
+export async function fetchAllSchedules() {
+  return fetchSchedules(null);
+}
+
+export async function createSchedule(item, personId = null) {
   const properties = await buildScheduleProperties(item, true);
+  // 人フィールドを設定
+  if (personId && scheduleProps?.person) {
+    const schema = await getScheduleSchema();
+    const k = safeKey(scheduleProps.person, schema);
+    if (k) {
+      const propType = schema[scheduleProps.person]?.type;
+      if (propType === 'rich_text') properties[k] = { rich_text: [{ text: { content: personId } }] };
+      else if (propType === 'select') properties[k] = { select: { name: personId } };
+    }
+  }
   const data = await fetchNotion(`/pages`, {
     method: 'POST',
     body: JSON.stringify({ parent: { database_id: SCHEDULE_DB_ID }, properties }),
@@ -522,4 +594,124 @@ export async function updateSchedule(scheduleId, updates) {
     method: 'PATCH',
     body: JSON.stringify({ properties }),
   });
+}
+
+// ─── Person (人) operations ───────────────────────────────────────────────────
+
+export async function fetchAllPersons() {
+  try {
+    await getPersonSchema();
+    const data = await fetchNotion(`/databases/${PERSON_DB_ID}/query`, {
+      method: 'POST',
+      body: JSON.stringify({ page_size: 100 }),
+    });
+
+    if (data.results?.length > 0 && !personSchemaCache) {
+      personSchemaCache = {};
+      for (const key in data.results[0].properties) {
+        personSchemaCache[key] = {
+          type: data.results[0].properties[key].type,
+          id:   data.results[0].properties[key].id,
+          name: key,
+        };
+      }
+      personProps = resolvePersonProps(personSchemaCache);
+    }
+
+    const pp = personProps || resolvePersonProps(personSchemaCache || {});
+
+    return data.results.map(page => {
+      const props = page.properties;
+      // idはtitleフィールド（Notionのprimary column）
+      const personId = pp.title ? (props[pp.title]?.title?.[0]?.plain_text || '') : '';
+      const personName = pp.name ? (props[pp.name]?.rich_text?.[0]?.plain_text || '') : '';
+      return {
+        id:   personId,
+        name: personName || personId,
+        pageId: page.id,
+      };
+    }).filter(p => p.id);
+  } catch (e) {
+    console.warn('[Notion] fetchAllPersons failed:', e);
+    return [];
+  }
+}
+
+// 指定IDの人を1件取得（ログイン時に使用）
+// - null を返す → DB に接続できたが該当IDが存在しない
+// - 例外を投げる → DB 接続失敗（PERSON_DB_ID 未設定 / API エラー）
+export async function fetchPersonById(inputId) {
+  // まず全件取得でスキーマを確立する（接続確認も兼ねる）
+  // fetchAllPersons は接続失敗時に [] を返す（例外を飲み込む）ため、
+  // ここでは直接 fetchNotion を呼んで接続エラーを検出する
+  try {
+    await getPersonSchema();
+  } catch (_) {}
+
+  // --- スキーマが解決できていない場合は全件取得で解決 ---
+  if (!personSchemaCache || !personProps) {
+    // DB に直接クエリして schema を確立（失敗は例外として上に伝播）
+    const schemaData = await fetchNotion(`/databases/${PERSON_DB_ID}/query`, {
+      method: 'POST',
+      body: JSON.stringify({ page_size: 1 }),
+    });
+    if (schemaData.results?.length > 0 && !personSchemaCache) {
+      personSchemaCache = {};
+      for (const key in schemaData.results[0].properties) {
+        personSchemaCache[key] = {
+          type: schemaData.results[0].properties[key].type,
+          id:   schemaData.results[0].properties[key].id,
+          name: key,
+        };
+      }
+      personProps = resolvePersonProps(personSchemaCache);
+    }
+  }
+
+  const pp = personProps || (personSchemaCache ? resolvePersonProps(personSchemaCache) : null);
+
+  if (!pp?.title) {
+    // title プロパティが解決できない場合は全件スキャンにフォールバック
+    // ただしこの場合も DB 接続は成功しているはずなので例外は投げない
+    const data = await fetchNotion(`/databases/${PERSON_DB_ID}/query`, {
+      method: 'POST',
+      body: JSON.stringify({ page_size: 100 }),
+    });
+    const found = data.results?.find(page => {
+      for (const key in page.properties) {
+        const prop = page.properties[key];
+        if (prop.type === 'title') {
+          return prop.title?.[0]?.plain_text === inputId;
+        }
+      }
+      return false;
+    });
+    if (!found) return null;
+    const props = found.properties;
+    const nameKey = Object.keys(props).find(k => props[k].type === 'rich_text');
+    const personName = nameKey ? (props[nameKey]?.rich_text?.[0]?.plain_text || '') : '';
+    return { id: inputId, name: personName || inputId, pageId: found.id };
+  }
+
+  // Notion API の filter で title (id カラム) が一致するものだけ取得
+  const data = await fetchNotion(`/databases/${PERSON_DB_ID}/query`, {
+    method: 'POST',
+    body: JSON.stringify({
+      page_size: 1,
+      filter: {
+        property: pp.title,
+        title: { equals: inputId },
+      },
+    }),
+  });
+
+  if (!data.results?.length) return null; // 接続OK、でも該当IDなし
+
+  const page = data.results[0];
+  const props = page.properties;
+  const personId   = pp.title ? (props[pp.title]?.title?.[0]?.plain_text || '') : '';
+  const personName = pp.name  ? (props[pp.name]?.rich_text?.[0]?.plain_text || '') : '';
+
+  if (!personId) return null;
+  return { id: personId, name: personName || personId, pageId: page.id };
 }

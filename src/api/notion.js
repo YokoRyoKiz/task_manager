@@ -375,7 +375,8 @@ export async function fetchTaskTree(personId = null) {
       const pagePersonId = props[tp.person]?.rich_text?.[0]?.plain_text
                         || props[tp.person]?.select?.name
                         || null;
-      if (pagePersonId !== personId) continue;
+      // 他人のIDが明示的に設定されている場合のみ除外（未設定・空の場合は取得する）
+      if (pagePersonId && pagePersonId !== personId) continue;
     }
 
     // ── Type determination ──────────────────────────────────────────────────
@@ -439,13 +440,15 @@ export async function fetchTaskTree(personId = null) {
 export async function createTask(task, personId = null) {
   const properties = await buildTaskProperties({ ...task, type: 'task' }, true);
   // 人フィールドを設定
-  if (personId && taskProps?.person) {
+  if (personId) {
     const schema = await getTaskSchema();
-    const k = safeKey(taskProps.person, schema);
-    if (k) {
-      const propType = schema[taskProps.person]?.type;
-      if (propType === 'rich_text') properties[k] = { rich_text: [{ text: { content: personId } }] };
-      else if (propType === 'select') properties[k] = { select: { name: personId } };
+    if (taskProps?.person) {
+      const k = safeKey(taskProps.person, schema);
+      if (k) {
+        const propType = schema[taskProps.person]?.type;
+        if (propType === 'rich_text') properties[k] = { rich_text: [{ text: { content: personId } }] };
+        else if (propType === 'select') properties[k] = { select: { name: personId } };
+      }
     }
   }
   const data = await fetchNotion(`/pages`, {
@@ -545,7 +548,8 @@ export async function fetchSchedules(personId = null) {
       const pagePersonId = props[sp.person]?.rich_text?.[0]?.plain_text
                         || props[sp.person]?.select?.name
                         || null;
-      if (pagePersonId !== personId) continue;
+      // 他人のIDが明示的に設定されている場合のみ除外（未設定・空の場合は取得する）
+      if (pagePersonId && pagePersonId !== personId) continue;
     }
 
     const title = extractTitleFromProps(props);
@@ -571,13 +575,15 @@ export async function fetchAllSchedules() {
 export async function createSchedule(item, personId = null) {
   const properties = await buildScheduleProperties(item, true);
   // 人フィールドを設定
-  if (personId && scheduleProps?.person) {
+  if (personId) {
     const schema = await getScheduleSchema();
-    const k = safeKey(scheduleProps.person, schema);
-    if (k) {
-      const propType = schema[scheduleProps.person]?.type;
-      if (propType === 'rich_text') properties[k] = { rich_text: [{ text: { content: personId } }] };
-      else if (propType === 'select') properties[k] = { select: { name: personId } };
+    if (scheduleProps?.person) {
+      const k = safeKey(scheduleProps.person, schema);
+      if (k) {
+        const propType = schema[scheduleProps.person]?.type;
+        if (propType === 'rich_text') properties[k] = { rich_text: [{ text: { content: personId } }] };
+        else if (propType === 'select') properties[k] = { select: { name: personId } };
+      }
     }
   }
   const data = await fetchNotion(`/pages`, {

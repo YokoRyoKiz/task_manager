@@ -295,6 +295,14 @@ async function buildTaskProperties(data, isCreate = true) {
         else if (propType === 'rich_text') setProp(taskProps.color, { rich_text: [{ text: { content: String(colorVal) } }] });
       }
     }
+
+    // Person (人)
+    const personVal = data.personId ?? data.person;
+    if (taskProps.person && personVal) {
+      const propType = schema[taskProps.person]?.type;
+      if (propType === 'select')         setProp(taskProps.person, { select: { name: String(personVal) } });
+      else if (propType === 'rich_text') setProp(taskProps.person, { rich_text: [{ text: { content: String(personVal) } }] });
+    }
   }
 
   return properties;
@@ -329,6 +337,14 @@ async function buildScheduleProperties(data, isCreate = true) {
       setProp(scheduleProps.startTime, { number: Number(data.startHour) || 0 });
     if (data.endHour !== undefined && scheduleProps.endTime)
       setProp(scheduleProps.endTime, { number: Number(data.endHour) || 1 });
+
+    // Person (人)
+    const personVal = data.personId ?? data.person;
+    if (scheduleProps.person && personVal) {
+      const propType = schema[scheduleProps.person]?.type;
+      if (propType === 'select')         setProp(scheduleProps.person, { select: { name: String(personVal) } });
+      else if (propType === 'rich_text') setProp(scheduleProps.person, { rich_text: [{ text: { content: String(personVal) } }] });
+    }
   }
 
   return properties;
@@ -438,19 +454,7 @@ export async function fetchTaskTree(personId = null) {
 // ─── CRUD operations ──────────────────────────────────────────────────────────
 
 export async function createTask(task, personId = null) {
-  const properties = await buildTaskProperties({ ...task, type: 'task' }, true);
-  // 人フィールドを設定
-  if (personId) {
-    const schema = await getTaskSchema();
-    if (taskProps?.person) {
-      const k = safeKey(taskProps.person, schema);
-      if (k) {
-        const propType = schema[taskProps.person]?.type;
-        if (propType === 'rich_text') properties[k] = { rich_text: [{ text: { content: personId } }] };
-        else if (propType === 'select') properties[k] = { select: { name: personId } };
-      }
-    }
-  }
+  const properties = await buildTaskProperties({ ...task, type: 'task', personId: personId || task.personId }, true);
   const data = await fetchNotion(`/pages`, {
     method: 'POST',
     body: JSON.stringify({ parent: { database_id: TASK_DB_ID }, properties }),
@@ -467,15 +471,16 @@ export async function updateTask(taskId, updates) {
   });
 }
 
-export async function createArea(area) {
+export async function createArea(area, personId = null) {
   const properties = await buildTaskProperties({
-    name:   area.name,
-    type:   'area',
-    x:      area.x,
-    y:      area.y,
-    width:  area.width,
-    height: area.height,
-    color:  area.color,
+    name:     area.name,
+    type:     'area',
+    x:        area.x,
+    y:        area.y,
+    width:    area.width,
+    height:   area.height,
+    color:    area.color,
+    personId: personId || area.personId,
   }, true);
   const data = await fetchNotion(`/pages`, {
     method: 'POST',
@@ -573,19 +578,7 @@ export async function fetchAllSchedules() {
 }
 
 export async function createSchedule(item, personId = null) {
-  const properties = await buildScheduleProperties(item, true);
-  // 人フィールドを設定
-  if (personId) {
-    const schema = await getScheduleSchema();
-    if (scheduleProps?.person) {
-      const k = safeKey(scheduleProps.person, schema);
-      if (k) {
-        const propType = schema[scheduleProps.person]?.type;
-        if (propType === 'rich_text') properties[k] = { rich_text: [{ text: { content: personId } }] };
-        else if (propType === 'select') properties[k] = { select: { name: personId } };
-      }
-    }
-  }
+  const properties = await buildScheduleProperties({ ...item, personId: personId || item.personId }, true);
   const data = await fetchNotion(`/pages`, {
     method: 'POST',
     body: JSON.stringify({ parent: { database_id: SCHEDULE_DB_ID }, properties }),

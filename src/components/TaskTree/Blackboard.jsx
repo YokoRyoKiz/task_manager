@@ -267,7 +267,7 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
 
     // Call API
     try {
-      const realId = await createArea(newArea);
+      const realId = await createArea(newArea, currentUser?.id || null);
       if (setAreas) {
         setAreas(prev => prev.map(a => a.id === tempId ? { ...a, id: realId } : a));
       }
@@ -414,7 +414,7 @@ export default function Blackboard({ tasks, setTasks, areas = [], setAreas }) {
     // Call API: Create children
     for (const child of children) {
       try {
-        const realId = await createTask(child);
+        const realId = await createTask(child, currentUser?.id || null);
         setTasks(prev => prev.map(t => t.id === child.id ? { ...t, id: realId } : t));
       } catch (err) {
         console.error(err);

@@ -136,7 +136,7 @@ export default function Timetable({ date, items, setItems, onExternalDropRef, is
         updateSchedule(updatedItem.id, {
           startHour: updatedItem.startHour,
           endHour: updatedItem.endHour
-        }).catch(console.error);
+        }, currentUser?.id || null).catch(console.error);
       }
       setInteractingItem(null);
       try { e.target.releasePointerCapture(e.pointerId); } catch (err) {}

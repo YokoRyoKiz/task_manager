@@ -593,8 +593,19 @@ export async function createSchedule(item, personId = null) {
   return data.id;
 }
 
-export async function updateSchedule(scheduleId, updates) {
+export async function updateSchedule(scheduleId, updates, personId = null) {
   const properties = await buildScheduleProperties(updates, false);
+  if (personId) {
+    const schema = await getScheduleSchema();
+    if (scheduleProps?.person) {
+      const k = safeKey(scheduleProps.person, schema);
+      if (k) {
+        const propType = schema[scheduleProps.person]?.type;
+        if (propType === 'rich_text') properties[k] = { rich_text: [{ text: { content: personId } }] };
+        else if (propType === 'select') properties[k] = { select: { name: personId } };
+      }
+    }
+  }
   if (Object.keys(properties).length === 0) return;
   await fetchNotion(`/pages/${scheduleId}`, {
     method: 'PATCH',

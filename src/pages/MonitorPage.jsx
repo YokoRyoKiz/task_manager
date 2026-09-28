@@ -118,15 +118,26 @@ export default function MonitorPage() {
 
   useEffect(() => { load(); }, []);
 
+  // Map person name/id for robust matching
+  const personMap = {};
+  for (const p of persons) {
+    personMap[p.id] = p.id;
+    if (p.name) personMap[p.name] = p.id;
+  }
+
   // Group schedules by personId
   const schedulesByPerson = {};
   for (const s of allSchedules) {
-    const pid = s.personId || '__unknown__';
+    let pid = s.personId;
+    if (pid && personMap[pid]) {
+      pid = personMap[pid];
+    }
+    pid = pid || '__unknown__';
     if (!schedulesByPerson[pid]) schedulesByPerson[pid] = [];
     schedulesByPerson[pid].push(s);
   }
 
-  // Show persons from DB, plus any in schedules not in person list
+  // Show persons from DB, plus extra IDs and unassigned column if schedules exist
   const personIds = new Set(persons.map(p => p.id));
   const extraIds = Object.keys(schedulesByPerson).filter(id => id !== '__unknown__' && !personIds.has(id));
 
@@ -134,6 +145,10 @@ export default function MonitorPage() {
     ...persons,
     ...extraIds.map(id => ({ id, name: id })),
   ];
+
+  if (schedulesByPerson['__unknown__'] && schedulesByPerson['__unknown__'].length > 0) {
+    displayPersons.push({ id: '__unknown__', name: '共有 / 未設定' });
+  }
 
   return (
     <div style={{ padding: '1rem', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
